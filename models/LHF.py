@@ -10,6 +10,11 @@ from layers.Autoformer_EncDec import Encoder, Decoder, EncoderLayer, DecoderLaye
 import math
 import numpy as np
 
+from . import FEDformer, Autoformer, Informer, Transformer, Triformer, FiLM
+from . import DLinear, NLinear, TiDE
+from . import xLSTM_TS
+from . import NLinearLHF
+
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -21,12 +26,14 @@ class Model(nn.Module):
     def __init__(self, configs):
         super(Model, self).__init__()
         
+        self.patch_length = configs.patch_length
+        self.pred_len = configs.pred_len
+        self.output_attention = configs.output_attention
+
         assert configs.pred_len % configs.patch_length == 0, "GUI assertion!"
-        self.networks = nn.ModuleList([_build_model(configs) for _ in range(configs.pred_len//configs.patch_length)])
+        configs.pred_len = configs.patch_length
+        self.networks = nn.ModuleList([self._build_model(configs) for _ in range(self.pred_len//self.patch_length)])
 
-
-
-    
     def _build_model(self, args):
         model_dict = {
             'FEDformer': FEDformer,
@@ -35,13 +42,10 @@ class Model(nn.Module):
             'Informer': Informer,
             'Triformer': Triformer,
             'FiLM': FiLM,
-            'DSTPRNN': DSTP_RNN_I,
             'DLinear': DLinear,
             'NLinear': NLinear,
             'NLinearLHF': NLinearLHF,
-            'NHITS': NHITS,
             'TiDE': TiDE,
-            'NBEATS': NBEATS,
             'xLSTM_TS': xLSTM_TS,
         }
         model_name = args.model.split('/')[-1]
@@ -55,30 +59,27 @@ class Model(nn.Module):
 
         return model
 
-
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec,
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None):
-        # decomp init
-        mean = torch.mean(x_enc, dim=1).unsqueeze(1).repeat(1, self.pred_len, 1)
-        zeros = torch.zeros([x_dec.shape[0], self.pred_len, x_dec.shape[2]]).to(device)  # cuda()
-        seasonal_init, trend_init = self.decomp(x_enc)
-        # decoder input
-        trend_init = torch.cat([trend_init[:, -self.label_len:, :], mean], dim=1)
-        seasonal_init = F.pad(seasonal_init[:, -self.label_len:, :], (0, 0, 0, self.pred_len))
-        # enc
-        enc_out = self.enc_embedding(x_enc, x_mark_enc)
-        enc_out, attns = self.encoder(enc_out, attn_mask=enc_self_mask)
-        # dec
-        dec_out = self.dec_embedding(seasonal_init, x_mark_dec)
-        seasonal_part, trend_part = self.decoder(dec_out, enc_out, x_mask=dec_self_mask, cross_mask=dec_enc_mask,
-                                                 trend=trend_init)
-        # final
-        dec_out = trend_part + seasonal_part
         
+        out_final, attns_final = [], []
+        for idx in range(len(self.networks)):
+            if self.output_attention:
+                out, attns = self.networks[idx](x_enc, x_mark_enc, x_dec, x_mark_dec,
+                                                enc_self_mask, dec_self_mask, dec_enc_mask)
+                out_final.append(out[:, -self.pred_len:, :])
+                attns_final.append(out)
+            else:
+                out = self.networks[idx](x_enc, x_mark_enc, x_dec, x_mark_dec,
+                                            enc_self_mask, dec_self_mask, dec_enc_mask)
+                out_final.append(out[:, -self.pred_len:, :])
+        
+        out_final = torch.concat(out_final, dim=1)
         if self.output_attention:
-            return dec_out[:, -self.pred_len:, :], attns
+            attns_final = torch.concat(attns_final, dim=1)
+            return out_final, attns_final
         else:
-            return dec_out[:, -self.pred_len:, :]  # [B, L, D]
+            return out_final  # [B, L, D]
 
 
 if __name__ == '__main__':
@@ -95,14 +96,17 @@ if __name__ == '__main__':
         seq_len = 96
         label_len = 48
         pred_len = 96
-        output_attention = True
+        output_attention = False
         enc_in = 7
         dec_in = 7
         d_model = 16
         embed = 'timeF'
         dropout = 0.05
         freq = 'h'
-        factor = 1
+        
+        # Triformer = 24, rest = 1
+        factor = 24
+
         n_heads = 8
         d_ff = 16
         e_layers = 2
@@ -110,15 +114,49 @@ if __name__ == '__main__':
         c_out = 7
         activation = 'gelu'
         wavelet = 0
+        
+        load_from_chkpt = None
+        use_multi_gpu = False
+        use_gpu = True
 
-    configs = Configs()
-    model = Model(configs)
+        model = "FEDformer"
+        patch_length = 24
 
-    print('parameter number is {}'.format(sum(p.numel() for p in model.parameters())))
-    enc = torch.randn([3, configs.seq_len, 7])
-    enc_mark = torch.randn([3, configs.seq_len, 4])
+        # Informer
+        distil = True
+        
+        # Triformer
+        patch_sizes = (2,3,4)
+    
+    kwargs = {}
+    kwargs["Autoformer"] = {"factor": 1}
+    kwargs["Triformer"] = {"patch_sizes": (2,3,4), "factor": 24}
+    kwargs["Informer"] = {"factor": 1, "distil": True}
+    kwargs["DLinear"] = {"factor": 7, "features": "M"}
+    kwargs["NLinear"] = {"factor": 7, "features": "M"}
+    kwargs["NLinearLHF"] = {"factor": 7, "features": "M", "start": 0.3, "step": 0.3, "lambdaval": 0.5}
+    kwargs["TiDE"] = {"factor": 7, "features": "M"}
+    kwargs["xLSTM_TS"] = {"factor": 7, "features": "M", "recurrent": False}
 
-    dec = torch.randn([3, configs.seq_len//2+configs.pred_len, 7])
-    dec_mark = torch.randn([3, configs.seq_len//2+configs.pred_len, 4])
-    out = model.forward(enc, enc_mark, dec, dec_mark)
-    print(out)
+    for model in ['FEDformer', 'Autoformer', 'Transformer', 'Informer',
+                  'Triformer', 'FiLM', 'DLinear', 'NLinear',
+                  'NLinearLHF', 'TiDE', 'xLSTM_TS']:
+        
+        print (model)
+
+        configs = Configs()
+        if model in kwargs:
+            configs.__dict__.update(kwargs[model])
+        
+        configs.model = model
+        model = Model(configs).to(device)
+        
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print('parameter number is {}'.format(sum(p.numel() for p in model.parameters())))
+        enc = torch.randn([3, configs.seq_len, 7]).to(device)
+        enc_mark = torch.randn([3, configs.seq_len, 4]).to(device)
+
+        dec = torch.randn([3, configs.seq_len//2+configs.pred_len, 7]).to(device)
+        dec_mark = torch.randn([3, configs.seq_len//2+configs.pred_len, 4]).to(device)
+        out = model.forward(enc, enc_mark, dec, dec_mark)
+        print(out.shape)

@@ -12,7 +12,7 @@ class Model(nn.Module):
         
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         input_dim = config.enc_in
-        patch_sizes = (4,4,4)
+        patch_sizes = config.patch_sizes
         mem_dim = 5
 
         self.factorized = True
@@ -38,18 +38,18 @@ class Model(nn.Module):
             cuts = int(cuts / patch_size)
             self.layers.append(Layer(device=device, input_dim=self.channels,
                                      dynamic=self.dynamic, num_nodes=self.num_nodes, cuts=cuts,
-                                     cut_size=patch_size, factorized=self.factorized))
+                                     cut_size=patch_size, factorized=self.factorized).to(device))
             self.skip_generators.append(WeightGenerator(in_dim=cuts * self.channels, out_dim=256, number_of_weights=1,
-                                                        mem_dim=mem_dim, num_nodes=self.num_nodes, device=device, factorized=False))
+                                                        mem_dim=mem_dim, num_nodes=self.num_nodes, device=device, factorized=False).to(device))
 
-        self.custom_linear = CustomLinear(factorized=False)
+        self.custom_linear = CustomLinear(factorized=False).to(device)
         self.projections = nn.Sequential(*[
             nn.Linear(256, 512),
             nn.ReLU(),
-            nn.Linear(512, self.horizon)])
+            nn.Linear(512, self.horizon)]).to(device)
         self.notprinted = False
 
-    def forward(self, batch_x, v1, v2, v3): #, batch_x_mark, dec_inp, batch_y_mark):
+    def forward(self, batch_x, v1, v2, v3, v4, v5, v6): #, batch_x_mark, dec_inp, batch_y_mark):
         if self.notprinted:
             self.notprinted = False
             print(batch_x.shape)
@@ -77,8 +77,8 @@ class Layer(nn.Module):
         self.dynamic = dynamic
         self.cuts = cuts
         self.cut_size = cut_size
-        self.temporal_embeddings = nn.Parameter(torch.rand(cuts, 1, 1, self.num_nodes, 5).to(device),
-                                                requires_grad=True).to(device)
+        self.temporal_embeddings = nn.Parameter(torch.rand(cuts, 1, 1, self.num_nodes, 5),
+                                                requires_grad=True)
 
         self.embeddings_generator = nn.ModuleList([nn.Sequential(*[
             nn.Linear(5, input_dim)]) for _ in range(cuts)])
@@ -206,8 +206,8 @@ class WeightGenerator(nn.Module):
         self.factorized = factorized
         self.out_dim = out_dim
         if self.factorized:
-            self.memory = nn.Parameter(torch.randn(num_nodes, mem_dim), requires_grad=True).to(device)
-            self.generator = self.generator = nn.Sequential(*[
+            self.memory = nn.Parameter(torch.randn(num_nodes, mem_dim), requires_grad=True)
+            self.generator = nn.Sequential(*[
                 nn.Linear(mem_dim, 64),
                 nn.Tanh(),
                 nn.Linear(64, 64),
