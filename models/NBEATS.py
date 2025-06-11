@@ -162,8 +162,8 @@ class NBEATSBlock(nn.Module):
             hidden_layers.append(activ)
 
             if self.dropout_prob > 0:
-                raise NotImplementedError("dropout")
-                # hidden_layers.append(nn.Dropout(p=self.dropout_prob))
+                #raise NotImplementedError("dropout")
+                hidden_layers.append(nn.Dropout(p=self.dropout_prob))
 
         output_layer = [nn.Linear(in_features=mlp_units[-1][1], out_features=n_theta)]
         layers = hidden_layers + output_layer
@@ -238,12 +238,12 @@ class Model(nn.Module):
         n_polynomials: int = 2
         stack_types: list = ["identity", "identity", "identity"]
         n_blocks: list = [1, 1, 1]
-        mlp_units: list = 3 * [[512, 512]]
-        dropout_prob_theta: float = 0.0
+        mlp_units: list = 3 * [[config.d_model, config.d_model]]
+        dropout_prob_theta: float = 0.2 
         activation: str = "ReLU"
         shared_weights: bool = True
         
-        self.c_in = 1 if config.features=='S' else 7
+        self.c_in = 1 if config.features=='S' or config.features == 'SM' else 7
 
         # Architecture
         blocks = self.create_stack(

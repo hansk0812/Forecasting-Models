@@ -220,7 +220,7 @@ class Model(nn.Module):
 
         self.h = config.pred_len
         input_size = config.seq_len
-        self.c_in = 1 if config.features=='S' else 7
+        self.c_in = 1 if config.features=='S' or config.features=='SM' else 7
         
         stack_types: list = ["identity", "identity", "identity"]
         n_blocks: list = [1, 1, 1]

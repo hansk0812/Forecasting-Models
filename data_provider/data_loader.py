@@ -138,7 +138,7 @@ class Dataset_ETT_minute(Dataset):
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
-        if self.features == 'M' or self.features == 'MS':
+        if self.features == 'M' or self.features == 'MS': #or self.features == "SMM":
             cols_data = df_raw.columns[1:]
             df_data = df_raw[cols_data]
         elif self.features == 'SM':
@@ -149,8 +149,15 @@ class Dataset_ETT_minute(Dataset):
 
         if self.scale:
             train_data = df_data[border1s[0]:border2s[0]]
+#            if self.features == "SMM":
+#                num_features = train_data.shape[-1]
+#                self.scaler.fit(train_data.values.reshape((-1, 1)))
+#                data = self.scaler.transform(df_data.values.reshape((-1,1)))
+#            else:
             self.scaler.fit(train_data.values)
             data = self.scaler.transform(df_data.values)
+#            if self.features == "SMM":
+#                data = data.reshape(-1, num_features)
         else:
             data = df_data.values
 
