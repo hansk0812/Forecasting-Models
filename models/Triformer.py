@@ -31,7 +31,6 @@ class Model(nn.Module):
 
         cuts = config.factor
         for patch_size in patch_sizes:
-            print (cuts, patch_size)
             if cuts % patch_size != 0:
                 raise Exception('Lag not divisible by patch size')
 

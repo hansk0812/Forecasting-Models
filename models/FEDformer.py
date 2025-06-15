@@ -73,7 +73,6 @@ class Model(nn.Module):
                                                       mode_select_method=configs.mode_select,
                                                       activation="sigmoid") #"tanh")
         
-        print ("in_channels", configs.d_model, "seq_len", self.seq_len, "modes", configs.modes)
 
         # Encoder
         enc_modes = int(min(configs.modes, configs.seq_len//2))
@@ -96,7 +95,6 @@ class Model(nn.Module):
             ],
             norm_layer=my_Layernorm(configs.d_model)
         )
-        print ("d_model", configs.d_model, "n_heads", configs.n_heads)
         # Decoder
         self.decoder = Decoder(
             [
