@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch import optim
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
-from models import FEDformer, Autoformer, Informer, Transformer, Triformer, FiLM, DSTP_RNN_I
+from models import FEDformer, Autoformer, Informer, Transformer, Triformer, FiLM
 from models import DLinear, NLinear, NHITS, TiDE, NBEATS
 from models import xLSTM_TS
 from models import NLinearLHF
@@ -32,15 +32,35 @@ class Exp_Main(Exp_Basic):
             'Informer': Informer,
             'Triformer': Triformer,
             'FiLM': FiLM,
-            'DSTPRNN': DSTP_RNN_I,
             'DLinear': DLinear,
             'NLinear': NLinear,
             'NLinearLHF': NLinearLHF,
             'NHITS': NHITS,
             'TiDE': TiDE,
             'NBEATS': NBEATS,
-            'xLSTM_TS': xLSTM_TS,
         }
+        try:
+            model_dict['xLSTM_TS'] = xLSTM_TS
+            if self.args.model == 'xLSTM_TS':
+                import xlstm
+                xlstm_dir = os.path.dirname(xlstm.__file__)
+                os.system(
+                        "sed -i \"s/self.config.embedding_dim=.*/self.config.embedding_dim=%d/\" \"%s/blocks/slstm/layer.py\"" \
+                                % (self.args.d_model, xlstm_dir))
+                os.system(
+                        "sed -i \"s/self.config.embedding_dim = .*/self.config.embedding_dim = %d/\" \"%s/blocks/mlstm/layer.py\"" \
+                                % (self.args.d_model, xlstm_dir))
+                os.system(
+                        "sed -i \"s/embedding_dim: int = .*/embedding_dim: int = %d/\" %s/xlstm_block_stack.py" \
+                                % (self.args.d_model, xlstm_dir))
+                
+                print ("xLSTM import complete with changes to package!")
+
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            pass
+
         model = model_dict[self.args.model].Model(self.args).float()
         
         if not self.args.load_from_chkpt is None:
@@ -91,8 +111,7 @@ class Exp_Main(Exp_Basic):
                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                     else:
                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                f_dim = -1 if self.args.features == 'MS' else 0
-                batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
 
                 pred = outputs.detach().cpu()
                 true = batch_y.detach().cpu()
@@ -154,8 +173,7 @@ class Exp_Main(Exp_Basic):
                         else:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
-                        f_dim = -1 if self.args.features == 'MS' else 0
-                        batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                        batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
                         loss = criterion(outputs, batch_y)
                         train_loss.append(loss.item())
                 else:
@@ -164,8 +182,7 @@ class Exp_Main(Exp_Basic):
                     else:
                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                     
-                    f_dim = -1 if self.args.features == 'MS' else 0
-                    batch_y = batch_y[:, -self.args.pred_len:, f_dim:]
+                    batch_y = batch_y[:, -self.args.pred_len:, :]
                     
                     loss = criterion(outputs, batch_y)
                     train_loss.append(loss.item())
@@ -211,7 +228,7 @@ class Exp_Main(Exp_Basic):
     def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')
         if test:
-            print('loading model')
+            print('loading model', setting)
             if not torch.cuda.is_available():
                 self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'), map_location=torch.device('cpu')))
             else:
@@ -223,6 +240,11 @@ class Exp_Main(Exp_Basic):
         folder_path = './test_results/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
+
+        if self.args.features == "SM":
+            self.args.features = 'M'
+            _, test_loader = self._get_data(flag="test")
+            self.args.features = "SM"
 
         self.model.eval()
         with torch.no_grad():
@@ -241,19 +263,33 @@ class Exp_Main(Exp_Basic):
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
                         if self.args.output_attention:
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                            if self.args.features == "SM":
+                                outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark)[0] \
+                                                for idx in range(batch_x.shape[-1])], dim=-1)
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                         else:
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                            if self.args.features == "SM":
+                                outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark) \
+                                                for idx in range(batch_x.shape[-1])], dim=-1)
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 else:
                     if self.args.output_attention:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                        if self.args.features == "SM":
+                            outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark)[0] \
+                                                    for idx in range(batch_x.shape[-1])], dim=-1)
+                        else:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
 
                     else:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                        if self.args.features == "SM":
+                            outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark) \
+                                                    for idx in range(batch_x.shape[-1])], dim=-1)
+                        else:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
-                f_dim = -1 if self.args.features == 'MS' else 0
-
-                batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
                 outputs = outputs.detach().cpu().numpy()
                 batch_y = batch_y.detach().cpu().numpy()
 
