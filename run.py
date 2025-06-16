@@ -1,3 +1,5 @@
+import glob
+
 import argparse
 import os
 import sys
@@ -92,6 +94,8 @@ def main():
     parser.add_argument('--devices', type=str, default='0,1', help='device ids of multi gpus')
     
     parser.add_argument('--load_from_chkpt', default=None, help="Path to pretrained model to resume training from")
+    
+    parser.add_argument('--load_from_zoo', action="store_true", help="If True, load corresponding checkpoint from LHF-Model-Zoo-ETTm2 folder")
 
     parser.add_argument('--start', default=1, type=float, help="AR SS arange param1")
     parser.add_argument('--step', default=1, type=float, help="AR SS arange param2")
@@ -113,6 +117,37 @@ def main():
     print(args)
 
     Exp = Exp_Main
+    
+    if args.load_from_zoo:
+        chkpt_dir = os.path.join("LHF-Model-Zoo-ETTm2", args.model, args.features)
+        chkpt_file = glob.glob(os.path.join(chkpt_dir, "*pl%s*" % args.pred_len))[0]
+        if os.path.isdir(chkpt_file):
+            params = chkpt_file.split('/')[-1]
+            chkpt_file = os.path.join(chkpt_file, "checkpoint.pth")
+        else:
+            params = chkpt_file.split('/')[-1].split('.pth')[0]
+        
+        get_param = lambda x, p: x.split(p)[-1].split('_')[0]
+        
+        args.task_id = args.data
+        args.seq_len = int(get_param(params, "sl"))
+        args.label_len = int(get_param(params, "ll"))
+        args.d_model = int(get_param(params, "dm"))
+        args.n_heads = int(get_param(params, "nh"))
+        args.e_layers = int(get_param(params, "el"))
+        args.d_layers = int(get_param(params, "dl"))
+        args.d_ff = int(get_param(params, "df"))
+        args.factor = int(get_param(params, "fc"))
+        args.des = get_param(params, "True_")
+        args.loss = "mae"
+        
+        folder = os.path.join("checkpoints", params)
+        chkpt = os.path.join(folder, "checkpoint.pth")
+        if not os.path.islink(chkpt):
+            if not os.path.isdir(folder):
+                os.makedirs(folder)
+            print (chkpt_file, "-->", chkpt)
+            os.symlink(chkpt_file, chkpt)
 
     if args.is_training:
         for ii in range(args.itr):

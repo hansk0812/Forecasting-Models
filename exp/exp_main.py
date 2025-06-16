@@ -229,10 +229,15 @@ class Exp_Main(Exp_Basic):
         test_data, test_loader = self._get_data(flag='test')
         if test:
             print('loading model', setting)
+            
+            fpath = os.path.join('./checkpoints/' + setting, 'checkpoint.pth')
+            while os.path.islink(fpath):
+                fpath = os.readlink(fpath)
+
             if not torch.cuda.is_available():
-                self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'), map_location=torch.device('cpu')))
+                self.model.load_state_dict(torch.load(fpath, map_location=torch.device('cpu')))
             else:
-                self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
+                self.model.load_state_dict(torch.load(fpath))
             print ('loaded model')
 
         preds = []

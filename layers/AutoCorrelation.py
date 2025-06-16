@@ -157,7 +157,6 @@ class AutoCorrelationLayer(nn.Module):
         self.n_heads = n_heads
 
     def forward(self, queries, keys, values, attn_mask):
-        print (queries.shape, keys.shape, values.shape)
         B, L, _ = queries.shape
         _, S, _ = keys.shape
         H = self.n_heads
