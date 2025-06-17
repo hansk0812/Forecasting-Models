@@ -25,6 +25,7 @@ python run.py --data ETTm2 --root_path [ETT-small dir path] --data_path [ETTXX.c
 ```
 
 If you found this repository useful, please cite: [https://arxiv.org/abs/2506.12809](https://arxiv.org/abs/2506.12809): A Review of the Long Horizon Forecasting Problem in Time Series Analysis
+```
 @misc{krupakar2025reviewlonghorizonforecasting,
       title={A Review of the Long Horizon Forecasting Problem in Time Series Analysis}, 
       author={Hans Krupakar and Kandappan V A},
@@ -34,3 +35,4 @@ If you found this repository useful, please cite: [https://arxiv.org/abs/2506.12
       primaryClass={cs.LG},
       url={https://arxiv.org/abs/2506.12809}, 
 }
+```
