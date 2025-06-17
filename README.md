@@ -24,4 +24,13 @@
 python run.py --data ETTm2 --root_path [ETT-small dir path] --data_path [ETTXX.csv] --model [MODEL] --is_training 0 --load_from_zoo --pred_len [96,192,336,720] --features [S,SM,M]
 ```
 
-If you found this repository useful, please cite: A Review of the Long Horizon Forecasting Problem in Time Series Analysis
+If you found this repository useful, please cite: [https://arxiv.org/abs/2506.12809](https://arxiv.org/abs/2506.12809): A Review of the Long Horizon Forecasting Problem in Time Series Analysis
+@misc{krupakar2025reviewlonghorizonforecasting,
+      title={A Review of the Long Horizon Forecasting Problem in Time Series Analysis}, 
+      author={Hans Krupakar and Kandappan V A},
+      year={2025},
+      eprint={2506.12809},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2506.12809}, 
+}
