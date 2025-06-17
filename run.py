@@ -19,7 +19,7 @@ def main():
 
     # basic config
     parser.add_argument('--is_training', type=int, default=1, help='status')
-    parser.add_argument('--task_id', type=str, default='test', help='task id')
+    parser.add_argument('--task_id', type=str, default=None, help='task id')
     parser.add_argument('--model', type=str, default='FEDformer',
                         help='model name, options: [FEDformer, Autoformer, Informer, Transformer]')
 
@@ -82,7 +82,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=32, help='batch size of train input data')
     parser.add_argument('--patience', type=int, default=30, help='early stopping patience')
     parser.add_argument('--learning_rate', type=float, default=0.00005, help='optimizer learning rate')
-    parser.add_argument('--des', type=str, default='test', help='exp description')
+    parser.add_argument('--des', type=str, default='Exp', help='exp description')
     parser.add_argument('--loss', type=str, default='mse', help='loss function')
     parser.add_argument('--lradj', type=str, default='type1', help='adjust learning rate')
     parser.add_argument('--use_amp', action='store_true', help='use automatic mixed precision training', default=False)
@@ -143,10 +143,11 @@ def main():
         
         folder = os.path.join("checkpoints", params)
         chkpt = os.path.join(folder, "checkpoint.pth")
+        if os.path.exists(chkpt):
+            os.remove(chkpt)
         if not os.path.islink(chkpt):
             if not os.path.isdir(folder):
                 os.makedirs(folder)
-            print (chkpt_file, "-->", chkpt)
             os.symlink(chkpt_file, chkpt)
 
     if args.is_training:
