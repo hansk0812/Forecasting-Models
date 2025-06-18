@@ -235,9 +235,17 @@ class Exp_Main(Exp_Basic):
                 fpath = os.readlink(fpath)
 
             if not torch.cuda.is_available():
-                self.model.load_state_dict(torch.load(fpath, map_location=torch.device('cpu')))
+                state_dict = torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'), map_location=torch.device('cpu'))
             else:
-                self.model.load_state_dict(torch.load(fpath))
+                state_dict = torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'))
+            
+            if 'module.' in next(iter(state_dict)):
+                from collections import OrderedDict
+                state_dict_new = OrderedDict()
+                for k, v in state_dict.items():
+                    state_dict_new[k[7:]] = v
+                state_dict = state_dict_new
+            self.model.load_state_dict(state_dict)
             print ('loaded model')
 
         preds = []
