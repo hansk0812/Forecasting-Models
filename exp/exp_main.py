@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch import optim
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
-from models import FEDformer, Autoformer, Informer, Transformer, Triformer, FiLM, DSTP_RNN_I
+from models import FEDformer, Autoformer, Informer, Transformer, Triformer, FiLM
 from models import DLinear, NLinear, NHITS, TiDE, NBEATS
 from models import xLSTM_TS
 from models import NLinearLHF
@@ -32,15 +32,35 @@ class Exp_Main(Exp_Basic):
             'Informer': Informer,
             'Triformer': Triformer,
             'FiLM': FiLM,
-            'DSTPRNN': DSTP_RNN_I,
             'DLinear': DLinear,
             'NLinear': NLinear,
             'NLinearLHF': NLinearLHF,
             'NHITS': NHITS,
             'TiDE': TiDE,
             'NBEATS': NBEATS,
-            'xLSTM_TS': xLSTM_TS,
         }
+        try:
+            model_dict['xLSTM_TS'] = xLSTM_TS
+            if self.args.model == 'xLSTM_TS':
+                import xlstm
+                xlstm_dir = os.path.dirname(xlstm.__file__)
+                os.system(
+                        "sed -i \"s/self.config.embedding_dim=.*/self.config.embedding_dim=%d/\" \"%s/blocks/slstm/layer.py\"" \
+                                % (self.args.d_model, xlstm_dir))
+                os.system(
+                        "sed -i \"s/self.config.embedding_dim = .*/self.config.embedding_dim = %d/\" \"%s/blocks/mlstm/layer.py\"" \
+                                % (self.args.d_model, xlstm_dir))
+                os.system(
+                        "sed -i \"s/embedding_dim: int = .*/embedding_dim: int = %d/\" %s/xlstm_block_stack.py" \
+                                % (self.args.d_model, xlstm_dir))
+                
+                print ("xLSTM import complete with changes to package!")
+
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            pass
+
         model = model_dict[self.args.model].Model(self.args).float()
         
         if not self.args.load_from_chkpt is None:
@@ -209,10 +229,23 @@ class Exp_Main(Exp_Basic):
         test_data, test_loader = self._get_data(flag='test')
         if test:
             print('loading model', setting)
+            
+            fpath = os.path.join('./checkpoints/' + setting, 'checkpoint.pth')
+            while os.path.islink(fpath):
+                fpath = os.readlink(fpath)
+
             if not torch.cuda.is_available():
-                self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'), map_location=torch.device('cpu')))
+                state_dict = torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'), map_location=torch.device('cpu'))
             else:
-                self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
+                state_dict = torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'))
+            
+            if 'module.' in next(iter(state_dict)):
+                from collections import OrderedDict
+                state_dict_new = OrderedDict()
+                for k, v in state_dict.items():
+                    state_dict_new[k[7:]] = v
+                state_dict = state_dict_new
+            self.model.load_state_dict(state_dict)
             print ('loaded model')
 
         preds = []
@@ -263,9 +296,7 @@ class Exp_Main(Exp_Basic):
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
 
                     else:
-                        #if self.args.features == "S":
                         if self.args.features == "SM":
-                            print (self.model(batch_x[...,0:1], None, None, None).shape, batch_x[...,0:1].shape)
                             outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark) \
                                                     for idx in range(batch_x.shape[-1])], dim=-1)
                         else:

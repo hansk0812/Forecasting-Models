@@ -1,8 +1,1 @@
 *__pycache__*
-*.pth
-*.npy
-*.txt
-*.sh
-*.csv
-*.pdf
-checkpoints/*

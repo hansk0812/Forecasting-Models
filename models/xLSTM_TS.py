@@ -28,7 +28,7 @@ RECURRENT_FACTOR = 48
 torch.autograd.set_detect_anomaly(True)
 
 def create_xlstm_model(config):
-    K = config.d_model // config.factor
+    K = 6 #5
     # Define your input size, hidden size, and other relevant parameters
     input_size = 1 if config.features=='S' else 7  # Number of features in your time series
     embedding_dim = config.factor * K if not config.recurrent else config.d_model #RECURRENT_FACTOR * input_size #64  # Dimension of the embeddings, reduced to save memory
@@ -42,7 +42,7 @@ def create_xlstm_model(config):
                 conv1d_kernel_size=config.factor, qkv_proj_blocksize=config.enc_in, num_heads=config.n_heads//2,  # nheads//2 enc_in=4, n_heads=4 Reduced parameters to save memory
                 bias=True, dropout=config.dropout,
                 #channel_mixing=False,
-                embedding_dim=config.d_model, #RECURRENT_FACTOR*input_size,
+                embedding_dim=config.factor*K if not config.recurrent else config.d_model, #RECURRENT_FACTOR*input_size,
                 proj_factor=2.,
                 )
             )

@@ -94,7 +94,7 @@ class NHITSBlock(nn.Module):
             + futr_input_size * pooled_futr_size
             + stat_input_size
         )
-
+ 
         self.dropout_prob = dropout_prob
         self.futr_input_size = futr_input_size
         self.hist_input_size = hist_input_size
@@ -123,7 +123,7 @@ class NHITSBlock(nn.Module):
 
         output_layer = [nn.Linear(in_features=mlp_units[-1][1], out_features=n_theta)]
         layers = hidden_layers + output_layer
-        self.layers = nn.Sequential(*layers)
+        self.layers = nn.ModuleList(layers) #nn.Sequential(*layers)
         self.basis = basis
 
     def forward(
@@ -143,9 +143,12 @@ class NHITSBlock(nn.Module):
         # Flatten MLP inputs [B, L+H, C] -> [B, (L+H)*C]
         # Contatenate [ Y_t, | X_{t-L},..., X_{t} | F_{t-L},..., F_{t+H} | S ]
         batch_size = len(insample_y)
-
+        
+        for layer in self.layers:
+            insample_y = layer(insample_y)
+        theta = insample_y
         # Compute local projection weights and projection
-        theta = self.layers(insample_y)
+        #theta = self.layers(insample_y)
         backcast, forecast = self.basis(theta)
         return backcast, forecast
 
@@ -220,18 +223,18 @@ class Model(nn.Module):
 
         self.h = config.pred_len
         input_size = config.seq_len
-        self.c_in = 1 if config.features=='S' or config.features=='SM' else 7
+        self.c_in = 1 if config.features=='S' or config.features=="SM" else 7
         
         stack_types: list = ["identity", "identity", "identity"]
         n_blocks: list = [1, 1, 1]
-        mlp_units: list = 3 * [[512, 512]]
-        n_pool_kernel_size: list = [2, 2, 1]
-        n_freq_downsample: list = [4, 2, 1]        
+        mlp_units: list = 1 * [[config.d_model, config.d_model]]
+        n_pool_kernel_size: list = [2, 2, 2]
+        n_freq_downsample: list = [24, 12, 1]        
         pooling_mode: str = "MaxPool1d"
         interpolation_mode: str = "linear"
-        dropout_prob_theta=0.0
+        dropout_prob_theta=0.2
         activation="ReLU"
-
+        
         # Architecture
         blocks = self.create_stack(
             h=self.h,
