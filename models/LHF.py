@@ -46,8 +46,29 @@ class Model(nn.Module):
             'NLinear': NLinear,
             'NLinearLHF': NLinearLHF,
             'TiDE': TiDE,
-            'xLSTM_TS': xLSTM_TS,
         }
+        try:
+            model_dict['xLSTM_TS'] = xLSTM_TS
+            if args.model == 'xLSTM_TS':
+                import os, xlstm
+                xlstm_dir = os.path.dirname(xlstm.__file__)
+                os.system(
+                        "sed -i \"s/self.config.embedding_dim=.*/self.config.embedding_dim=%d/\" \"%s/blocks/slstm/layer.py\"" \
+                                % (args.d_model, xlstm_dir))
+                os.system(
+                        "sed -i \"s/self.config.embedding_dim = .*/self.config.embedding_dim = %d/\" \"%s/blocks/mlstm/layer.py\"" \
+                                % (args.d_model, xlstm_dir))
+                os.system(
+                        "sed -i \"s/embedding_dim: int = .*/embedding_dim: int = %d/\" %s/xlstm_block_stack.py" \
+                                % (args.d_model, xlstm_dir))
+                
+                print ("xLSTM import complete with changes to package!")
+
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            pass
+
         model_name = args.model.split('/')[-1]
         model = model_dict[model_name].Model(args).float()
         
@@ -67,12 +88,12 @@ class Model(nn.Module):
             if self.output_attention:
                 out, attns = self.networks[idx](x_enc, x_mark_enc, x_dec, x_mark_dec,
                                                 enc_self_mask, dec_self_mask, dec_enc_mask)
-                out_final.append(out[:, -self.pred_len:, :])
+                out_final.append(out[:, -self.patch_length:, :])
                 attns_final.append(out)
             else:
                 out = self.networks[idx](x_enc, x_mark_enc, x_dec, x_mark_dec,
                                             enc_self_mask, dec_self_mask, dec_enc_mask)
-                out_final.append(out[:, -self.pred_len:, :])
+                out_final.append(out[:, -self.patch_length:, :])
         
         out_final = torch.concat(out_final, dim=1)
         if self.output_attention:
@@ -130,17 +151,17 @@ if __name__ == '__main__':
     
     kwargs = {}
     kwargs["Autoformer"] = {"factor": 1}
-    kwargs["Triformer"] = {"patch_sizes": (2,3,4), "factor": 24}
+    kwargs["Triformer"] = {"detail_freq": "[2,3,4]", "factor": 24}
     kwargs["Informer"] = {"factor": 1, "distil": True}
     kwargs["DLinear"] = {"factor": 7, "features": "M"}
     kwargs["NLinear"] = {"factor": 7, "features": "M"}
     kwargs["NLinearLHF"] = {"factor": 7, "features": "M", "start": 0.3, "step": 0.3, "lambdaval": 0.5}
     kwargs["TiDE"] = {"factor": 7, "features": "M"}
-    kwargs["xLSTM_TS"] = {"factor": 7, "features": "M", "recurrent": False}
+    kwargs["xLSTM_TS"] = {"factor": 24, "d_model": 144, "enc_in": 4, "features": "M", "recurrent": False}
 
-    for model in ['FEDformer', 'Autoformer', 'Transformer', 'Informer',
-                  'Triformer', 'FiLM', 'DLinear', 'NLinear',
-                  'NLinearLHF', 'TiDE', 'xLSTM_TS']:
+    for model in ["xLSTM_TS"]: #'FEDformer', 'Autoformer', 'Transformer', 'Informer',
+                  #'Triformer', 'FiLM', 'DLinear', 'NLinear',
+                  #'NLinearLHF', 'TiDE', 'xLSTM_TS']:
         
         print (model)
 

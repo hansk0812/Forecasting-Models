@@ -28,12 +28,11 @@ RECURRENT_FACTOR = 48
 torch.autograd.set_detect_anomaly(True)
 
 def create_xlstm_model(config):
-    K = 6 #5
     # Define your input size, hidden size, and other relevant parameters
     input_size = 1 if config.features=='S' else 7  # Number of features in your time series
-    embedding_dim = config.factor * K if not config.recurrent else config.d_model #RECURRENT_FACTOR * input_size #64  # Dimension of the embeddings, reduced to save memory
+    embedding_dim = config.d_model #RECURRENT_FACTOR * input_size #64  # Dimension of the embeddings, reduced to save memory
     output_size = input_size  # Number of output features (predicting the next value)
-    seq_length = config.seq_len
+    seq_length = config.pred_len
     
     print ("dropout:", config.dropout)
     # Define the xLSTM configuration
@@ -42,8 +41,9 @@ def create_xlstm_model(config):
                 conv1d_kernel_size=config.factor, qkv_proj_blocksize=config.enc_in, num_heads=config.n_heads//2,  # nheads//2 enc_in=4, n_heads=4 Reduced parameters to save memory
                 bias=True, dropout=config.dropout,
                 #channel_mixing=False,
-                embedding_dim=config.factor*K if not config.recurrent else config.d_model, #RECURRENT_FACTOR*input_size,
+                embedding_dim=config.d_model, #RECURRENT_FACTOR*input_size,
                 proj_factor=2.,
+                context_length=config.seq_len
                 )
             )
     slstm_block=sLSTMBlockConfig(
@@ -63,16 +63,16 @@ def create_xlstm_model(config):
         cfg = xLSTMBlockStackConfig(
             slstm_block=slstm_block,
             mlstm_block=mlstm_block,
-            context_length=seq_length,
+            context_length=config.seq_len,
             num_blocks=config.e_layers,  # Reduced number of blocks to save memory
-            #embedding_dim=config.factor * 8, # hardcoded gyan
+            embedding_dim=config.d_model, 
             slstm_at=[1 if config.e_layers>1 else 0],
             add_post_blocks_norm=False,
         )
     else:
         cfg = xLSTMBlockStackConfig(
             mlstm_block=mlstm_block,
-            context_length=seq_length,
+            context_length=config.seq_len,
             num_blocks=config.e_layers,  # Reduced number of blocks to save memory
             #embedding_dim=config.factor * 8, # hardcoded gyan
             add_post_blocks_norm=False,
@@ -85,10 +85,10 @@ def create_xlstm_model(config):
     if not config.recurrent:
         input_projection = nn.Linear(input_size, embedding_dim) #input_size)
     else:
-        input_projection = nn.Linear(input_size*(config.seq_len//RECURRENT_FACTOR), embedding_dim) #input_size)
+        input_projection = nn.Linear(input_size*(config.pred_len//RECURRENT_FACTOR), embedding_dim) #input_size)
 
     # Add a final linear layer to project the xLSTM output to the desired output size
-    output_projection = nn.Linear(embedding_dim, output_size*(config.seq_len//RECURRENT_FACTOR) if config.recurrent else output_size) #output_size, output_size)
+    output_projection = nn.Linear(embedding_dim, output_size*(config.pred_len//RECURRENT_FACTOR) if config.recurrent else output_size) #output_size, output_size)
 
     return xlstm_stack, input_projection, output_projection
 
