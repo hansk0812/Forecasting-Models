@@ -10,8 +10,9 @@ from layers.Autoformer_EncDec import Encoder, Decoder, EncoderLayer, DecoderLaye
 import math
 import numpy as np
 
-from . import FEDformer, Autoformer, Informer, Transformer, Triformer, FiLM
-from . import DLinear, NLinear, TiDE
+from . import FEDformer, Autoformer, Informer, Transformer, Triformer
+from . import DLinear, NLinear, TiDE, FiLM
+from . import NBEATS, NHITS
 from . import xLSTM_TS
 from . import NLinearLHF
 
@@ -44,31 +45,12 @@ class Model(nn.Module):
             'FiLM': FiLM,
             'DLinear': DLinear,
             'NLinear': NLinear,
+            'NHITS': NHITS,
+            'NBEATS': NBEATS,
             'NLinearLHF': NLinearLHF,
             'TiDE': TiDE,
+            'xLSTM_TS': xLSTM_TS,
         }
-        try:
-            model_dict['xLSTM_TS'] = xLSTM_TS
-            if args.model == 'xLSTM_TS':
-                import os, xlstm
-                xlstm_dir = os.path.dirname(xlstm.__file__)
-                os.system(
-                        "sed -i \"s/self.config.embedding_dim=.*/self.config.embedding_dim=%d/\" \"%s/blocks/slstm/layer.py\"" \
-                                % (args.d_model, xlstm_dir))
-                os.system(
-                        "sed -i \"s/self.config.embedding_dim = .*/self.config.embedding_dim = %d/\" \"%s/blocks/mlstm/layer.py\"" \
-                                % (args.d_model, xlstm_dir))
-                os.system(
-                        "sed -i \"s/embedding_dim: int = .*/embedding_dim: int = %d/\" %s/xlstm_block_stack.py" \
-                                % (args.d_model, xlstm_dir))
-                
-                print ("xLSTM import complete with changes to package!")
-
-        except Exception:
-            import traceback
-            traceback.print_exc()
-            pass
-
         model_name = args.model.split('/')[-1]
         model = model_dict[model_name].Model(args).float()
         
@@ -88,12 +70,13 @@ class Model(nn.Module):
             if self.output_attention:
                 out, attns = self.networks[idx](x_enc, x_mark_enc, x_dec, x_mark_dec,
                                                 enc_self_mask, dec_self_mask, dec_enc_mask)
-                out_final.append(out[:, -self.patch_length:, :])
+                out_final.append(out[:, -self.pred_len:, :])
                 attns_final.append(out)
             else:
                 out = self.networks[idx](x_enc, x_mark_enc, x_dec, x_mark_dec,
                                             enc_self_mask, dec_self_mask, dec_enc_mask)
-                out_final.append(out[:, -self.patch_length:, :])
+                print (out.shape)
+                out_final.append(out[:, -self.pred_len:, :])
         
         out_final = torch.concat(out_final, dim=1)
         if self.output_attention:
@@ -151,33 +134,44 @@ if __name__ == '__main__':
     
     kwargs = {}
     kwargs["Autoformer"] = {"factor": 1}
-    kwargs["Triformer"] = {"detail_freq": "[2,3,4]", "factor": 24}
+    kwargs["Triformer"] = {"detail_freq": "(2,3,4)", "factor": 24}
     kwargs["Informer"] = {"factor": 1, "distil": True}
     kwargs["DLinear"] = {"factor": 7, "features": "M"}
     kwargs["NLinear"] = {"factor": 7, "features": "M"}
     kwargs["NLinearLHF"] = {"factor": 7, "features": "M", "start": 0.3, "step": 0.3, "lambdaval": 0.5}
-    kwargs["TiDE"] = {"factor": 7, "features": "M"}
-    kwargs["xLSTM_TS"] = {"factor": 24, "d_model": 144, "enc_in": 4, "features": "M", "recurrent": False}
+    kwargs["TiDE"] = {"factor": 4, "features": "M"}
+    kwargs["xLSTM_TS"] = {"factor": 24, "features": "M", "recurrent": False, "enc_in": 4, "d_model": 144}
+    kwargs["NHITS"] = {"enc_in": 1, "dec_in": 1, "features": "S"}
+    kwargs["NBEATS"] = {"enc_in": 1, "dec_in": 1, "features": "S"}
+    
+    SM_models = ["NBEATS", "NHITS"]
 
-    for model in ["xLSTM_TS"]: #'FEDformer', 'Autoformer', 'Transformer', 'Informer',
-                  #'Triformer', 'FiLM', 'DLinear', 'NLinear',
-                  #'NLinearLHF', 'TiDE', 'xLSTM_TS']:
+    for model_name in ['FEDformer', 'Autoformer', 'Transformer', 'Informer',
+                  'Triformer', 'FiLM', 'DLinear', 'NLinear', 'NBEATS', 'NHITS',
+                  'NLinearLHF', 'TiDE', 'xLSTM_TS']:
         
-        print (model)
-
+        print (model_name)
+        
         configs = Configs()
-        if model in kwargs:
-            configs.__dict__.update(kwargs[model])
+        if model_name in kwargs:
+            configs.__dict__.update(kwargs[model_name])
         
-        configs.model = model
+        configs.model = model_name
+        
+        import sys
+        save_stdout = sys.stdout
+        sys.stdout = open('trash', 'w')
+        
         model = Model(configs).to(device)
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print('parameter number is {}'.format(sum(p.numel() for p in model.parameters())))
-        enc = torch.randn([3, configs.seq_len, 7]).to(device)
+        
+        enc = torch.randn([3, configs.seq_len, 7 if not model_name in SM_models else 1]).to(device)
         enc_mark = torch.randn([3, configs.seq_len, 4]).to(device)
-
-        dec = torch.randn([3, configs.seq_len//2+configs.pred_len, 7]).to(device)
+        dec = torch.randn([3, configs.seq_len//2+configs.pred_len, 7 if not model in SM_models else 1]).to(device)
         dec_mark = torch.randn([3, configs.seq_len//2+configs.pred_len, 4]).to(device)
+        
         out = model.forward(enc, enc_mark, dec, dec_mark)
+        sys.stdout = save_stdout
         print(out.shape)
