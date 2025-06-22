@@ -42,8 +42,8 @@ def create_xlstm_model(config):
                 bias=True, dropout=config.dropout,
                 embedding_dim=config.d_model, #RECURRENT_FACTOR*input_size,
                 proj_factor=2.,
-                channel_mixing=True,
-                #strided_conv=True
+                channel_mixing=config.d_ff>0,
+                strided_conv=config.modes>0
                 )
             )
     slstm_block=sLSTMBlockConfig(
@@ -54,8 +54,8 @@ def create_xlstm_model(config):
                 bias_init="powerlaw_blockdependent",
                 dropout=config.dropout,
                 embedding_dim=config.d_model,
-                channel_mixing=True,
-                #strided_conv=True
+                channel_mixing=False,
+                strided_conv=True
                 ),
                 feedforward=FeedForwardConfig(proj_factor=1.1, act_fn="gelu"), # Reduced projection factor to save memory
             )

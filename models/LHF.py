@@ -140,7 +140,7 @@ if __name__ == '__main__':
     kwargs["NLinear"] = {"factor": 7, "features": "M"}
     kwargs["NLinearLHF"] = {"factor": 7, "features": "M", "start": 0.3, "step": 0.3, "lambdaval": 0.5}
     kwargs["TiDE"] = {"factor": 4, "features": "M"}
-    kwargs["xLSTM_TS"] = {"factor": 24, "features": "M", "recurrent": False, "enc_in": 4, "d_model": 144}
+    kwargs["xLSTM_TS"] = {"factor": 24, "features": "M", "recurrent": False, "enc_in": 4, "d_model": 144, "n_heads": 4, "d_ff": 0, "modes": 0}
     kwargs["NHITS"] = {"enc_in": 1, "dec_in": 1, "features": "S"}
     kwargs["NBEATS"] = {"enc_in": 1, "dec_in": 1, "features": "S"}
     
