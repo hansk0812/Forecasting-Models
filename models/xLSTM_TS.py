@@ -41,9 +41,9 @@ def create_xlstm_model(config):
                 conv1d_kernel_size=config.factor, qkv_proj_blocksize=config.enc_in, num_heads=config.n_heads//2,  # nheads//2 enc_in=4, n_heads=4 Reduced parameters to save memory
                 bias=True, dropout=config.dropout,
                 embedding_dim=config.d_model, #RECURRENT_FACTOR*input_size,
-                proj_factor=2.,
+                proj_factor=config.n_heads//2,
                 channel_mixing=config.d_ff>0,
-                strided_conv=config.modes
+                strided_conv=config.modes if config.modes != 1 else int(not config.distil)
                 )
             )
     slstm_block=sLSTMBlockConfig(
@@ -65,8 +65,8 @@ def create_xlstm_model(config):
             slstm_block=slstm_block,
             mlstm_block=mlstm_block,
             context_length=config.seq_len,
-            num_blocks=config.e_layers,  # Reduced number of blocks to save memory
-            embedding_dim=config.d_model, # hardcoded gyan
+            num_blocks=config.e_layers + config.d_layers, # Reduced number of blocks to save memory
+            embedding_dim=config.d_model,
             slstm_at=[1 if config.e_layers>1 else 0],
             add_post_blocks_norm=False,
         )
@@ -75,7 +75,7 @@ def create_xlstm_model(config):
             mlstm_block=mlstm_block,
             context_length=config.seq_len,
             num_blocks=config.e_layers,  # Reduced number of blocks to save memory
-            embedding_dim=config.d_model, # hardcoded gyan
+            embedding_dim=config.d_model,
             add_post_blocks_norm=False,
         )
     
@@ -110,6 +110,8 @@ class Model(nn.Module):
 
         self.xlstm_stack, self.input_projection, self.output_projection, self.temporal_projection = create_xlstm_model(config)
         self.recurrent = config.recurrent
+        
+        print (self)
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec,
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None):

@@ -70,10 +70,7 @@ class Model(nn.Module):
                                                       seq_len_q=self.seq_len//2+self.pred_len,
                                                       seq_len_kv=self.seq_len,
                                                       modes=configs.modes,
-                                                      mode_select_method=configs.mode_select,
-                                                      activation="sigmoid") #"tanh")
-        
-
+                                                      mode_select_method=configs.mode_select)
         # Encoder
         enc_modes = int(min(configs.modes, configs.seq_len//2))
         dec_modes = int(min(configs.modes, (configs.seq_len//2+configs.pred_len)//2))
@@ -136,7 +133,7 @@ class Model(nn.Module):
                                                  trend=trend_init)
         # final
         dec_out = trend_part + seasonal_part
-        
+
         if self.output_attention:
             return dec_out[:, -self.pred_len:, :], attns
         else:

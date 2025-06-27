@@ -12,7 +12,7 @@ class Model(nn.Module):
         
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         input_dim = config.enc_in
-        patch_sizes = (4,4,4)
+        patch_sizes = [int(x) for x in config.detail_freq[1:-1].split(',')]
         mem_dim = 5
 
         self.factorized = True
@@ -31,9 +31,11 @@ class Model(nn.Module):
 
         cuts = config.factor
         for patch_size in patch_sizes:
+            print (cuts, patch_size)
+
             if cuts % patch_size != 0:
                 raise Exception('Lag not divisible by patch size')
-
+            
             cuts = int(cuts / patch_size)
             self.layers.append(Layer(device=device, input_dim=self.channels,
                                      dynamic=self.dynamic, num_nodes=self.num_nodes, cuts=cuts,
@@ -48,7 +50,7 @@ class Model(nn.Module):
             nn.Linear(512, self.horizon)])
         self.notprinted = False
 
-    def forward(self, batch_x, v1, v2, v3): #, batch_x_mark, dec_inp, batch_y_mark):
+    def forward(self, batch_x, v1, v2, v3, v4, v5, v6): #, batch_x_mark, dec_inp, batch_y_mark):
         if self.notprinted:
             self.notprinted = False
             print(batch_x.shape)
