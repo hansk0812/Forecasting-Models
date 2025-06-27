@@ -1,7 +1,9 @@
-import glob
-
 import argparse
+
 import os
+import glob
+import json
+
 import sys
 import torch
 from exp.exp_main import Exp_Main
@@ -19,7 +21,7 @@ def main():
 
     # basic config
     parser.add_argument('--is_training', type=int, default=1, help='status')
-    parser.add_argument('--task_id', type=str, default=None, help='task id')
+    parser.add_argument('--task_id', type=str, default='test', help='task id')
     parser.add_argument('--model', type=str, default='FEDformer',
                         help='model name, options: [FEDformer, Autoformer, Informer, Transformer]')
 
@@ -82,7 +84,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=32, help='batch size of train input data')
     parser.add_argument('--patience', type=int, default=30, help='early stopping patience')
     parser.add_argument('--learning_rate', type=float, default=0.00005, help='optimizer learning rate')
-    parser.add_argument('--des', type=str, default='Exp', help='exp description')
+    parser.add_argument('--des', type=str, default='test', help='exp description')
     parser.add_argument('--loss', type=str, default='mse', help='loss function')
     parser.add_argument('--lradj', type=str, default='type1', help='adjust learning rate')
     parser.add_argument('--use_amp', action='store_true', help='use automatic mixed precision training', default=False)
@@ -94,9 +96,9 @@ def main():
     parser.add_argument('--devices', type=str, default='0,1', help='device ids of multi gpus')
     
     parser.add_argument('--load_from_chkpt', default=None, help="Path to pretrained model to resume training from")
-    
-    parser.add_argument('--load_from_zoo', action="store_true", help="If True, load corresponding checkpoint from LHF-Model-Zoo-ETTm2 folder")
 
+    parser.add_argument('--model_params_json', default=None, help="Path to JSON file with model hyperparameters and model zoo dir if available")
+    
     parser.add_argument('--start', default=1, type=float, help="AR SS arange param1")
     parser.add_argument('--step', default=1, type=float, help="AR SS arange param2")
     parser.add_argument('--lambdaval', default=0.5, type=float, help="AR SS weightage param")
@@ -112,43 +114,35 @@ def main():
         device_ids = args.devices.split(',')
         args.device_ids = [int(id_) for id_ in device_ids]
         args.gpu = args.device_ids[0]
+    
+    if not args.model_params_json is None and os.path.exists(args.model_params_json):
+        with open(args.model_params_json, 'r') as f:
+            params = json.load(f)
+        
+        model_params = params["models"][args.model][str(args.pred_len)]
+        
+        try:
+            chkpt_path = glob.glob(os.path.join(params["zoo_path"], args.model.split('/')[-1], \
+                                                args.features, "*sl%d_*pl%d*" % (model_params["seq_len"], model_params["pred_len"])))[0]
+        
+            if os.path.isdir(chkpt_path):
+                chkpt_path = os.path.join(chkpt_path, "checkpoint.pth")
+            
+            args.load_from_chkpt = chkpt_path
+    
+        except Exception:
+            
+            print ("\n\n", "."*75, "\n")
+            print ("\t Model: %s ; Horizon: %d CHECKPOINT FILE NOT FOUND IN ZOO" % (args.model, args.pred_len))
+            print ("\n\n", "."*75, "\n")
+
+        for param in model_params:
+            setattr(args, param, model_params[param])
 
     print('Args in experiment:')
     print(args)
 
     Exp = Exp_Main
-    
-    if args.load_from_zoo:
-        chkpt_dir = os.path.join("LHF-Model-Zoo-ETTm2", args.model, args.features)
-        chkpt_file = glob.glob(os.path.join(chkpt_dir, "*pl%s*" % args.pred_len))[0]
-        if os.path.isdir(chkpt_file):
-            params = chkpt_file.split('/')[-1]
-            chkpt_file = os.path.join(chkpt_file, "checkpoint.pth")
-        else:
-            params = chkpt_file.split('/')[-1].split('.pth')[0]
-        
-        get_param = lambda x, p: x.split(p)[-1].split('_')[0]
-        
-        args.task_id = args.data
-        args.seq_len = int(get_param(params, "sl"))
-        args.label_len = int(get_param(params, "ll"))
-        args.d_model = int(get_param(params, "dm"))
-        args.n_heads = int(get_param(params, "nh"))
-        args.e_layers = int(get_param(params, "el"))
-        args.d_layers = int(get_param(params, "dl"))
-        args.d_ff = int(get_param(params, "df"))
-        args.factor = int(get_param(params, "fc"))
-        args.des = get_param(params, "True_")
-        args.loss = "mae"
-        
-        folder = os.path.join("checkpoints", params)
-        chkpt = os.path.join(folder, "checkpoint.pth")
-        if os.path.exists(chkpt):
-            os.remove(chkpt)
-        if not os.path.islink(chkpt):
-            if not os.path.isdir(folder):
-                os.makedirs(folder)
-            os.symlink(chkpt_file, chkpt)
 
     if args.is_training:
         for ii in range(args.itr):
@@ -208,7 +202,14 @@ def main():
                 args.distil,
                 args.des,
                 ii)
+        
+        if not args.model_params_json is None:
+            chkpt_symlink = os.path.join("checkpoints", setting, "checkpoint.pth")
+            if not os.path.exists(os.path.dirname(chkpt_symlink)):
+                os.makedirs(os.path.dirname(chkpt_symlink))
 
+            if not args.load_from_chkpt is None and not os.path.islink(chkpt_symlink):
+                os.symlink(args.load_from_chkpt, chkpt_symlink)
 
         exp = Exp(args)  # set experiments
         print ('test > mse:', args.model, args.pred_len, 'horizon size')

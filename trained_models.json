@@ -309,7 +309,7 @@
                 "factor": 3
             },
             "720": {
-                "features": "M",
+                "features": "SM",
                 "seq_len": 336,
                 "label_len": 48,
                 "pred_len": 720,
