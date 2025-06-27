@@ -50,7 +50,7 @@ class Model(nn.Module):
             nn.Linear(512, self.horizon)])
         self.notprinted = False
 
-    def forward(self, batch_x, v1, v2, v3, v4, v5, v6): #, batch_x_mark, dec_inp, batch_y_mark):
+    def forward(self, batch_x, v1, v2, v3, v4=None, v5=None, v6=None): #, batch_x_mark, dec_inp, batch_y_mark):
         if self.notprinted:
             self.notprinted = False
             print(batch_x.shape)
