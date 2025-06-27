@@ -21,7 +21,7 @@
 ### Use this to run the code:
 
 ```
-python run.py --data ETTm2 --root_path [ETT-small dir path] --data_path [ETTXX.csv] --model [MODEL] --is_training 0 --load_from_zoo --pred_len [96,192,336,720] --features [S,SM,M]
+python run.py --root_path [ETT-small DIR PATH] --data_path ETTm2.csv --model [MODEL] --data ETTm2 --features [S,SM,M] --is_training 0 --pred_len [96,192,336,720] --enc_in [1,7] --dec_in [1,7] --c_out [1,7] --itr [N] --model_params_json trained_models.json
 ```
 
 If you found this repository useful, please cite: [https://arxiv.org/abs/2506.12809](https://arxiv.org/abs/2506.12809): A Review of the Long Horizon Forecasting Problem in Time Series Analysis
