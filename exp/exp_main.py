@@ -79,7 +79,6 @@ class Exp_Main(Exp_Basic):
                 except Exception:
                     #import traceback
                     #traceback.print_exc()
-                    print (type(self.args.pred_len), type(self.args.patches_size))
                     print ("COULDN'T LOAD CHECKPOINT FROM FILE OVER PATCHES MODELS! 1 vs n NETWORKS, SIZE DIFFERENCES")
             else:
                 model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))

@@ -50,10 +50,10 @@ class Model(nn.Module):
                 chkpt_m = net.state_dict()
 
                 for cf, cm in zip(chkpt_f, chkpt_m):
-                    assert cf == cm, "Name conflict in checkpoint file: %s in file vs %s in model" % (cf, cm)
                     if not all([chkpt_f[cf].shape[idx]==chkpt_m[cm].shape[idx] for idx in range(len(chkpt_f[cf].shape))]):
                         print ("Skipping %s from checkpoint file!" % cf)
                         continue
+                    #assert cf == cm, "Name conflict in checkpoint file: %s in file vs %s in model" % (cf, cm)
                     chkpt_m[cm] = chkpt_f[cf]
 
             print ("\n", "."*50, "\nLoaded %d copies of original model\n" % (self.pred_len // configs.patches_size), "."*50, "\n") 
@@ -90,7 +90,7 @@ class Model(nn.Module):
                 if not args.load_from_chkpt is None:
                     model.load_state_dict(torch.load(args.load_from_chkpt, weights_only=True))
             except Exception:
-                traceback.print_exc()
+                #traceback.print_exc()
                 print ("COULDN'T LOAD CHECKPOINT INTO COMPOSED MODELS")
         else:
             if not args.load_from_chkpt is None:
