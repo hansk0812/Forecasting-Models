@@ -14,6 +14,7 @@
 ###### FEDformer
 ###### PatchTST
 
+###### Pyraformer
 ###### Triformer
 
 ## Download the model zoo from: [https://bit.ly/LHFModelZoo](https://bit.ly/LHFModelZoo)
