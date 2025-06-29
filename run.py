@@ -124,8 +124,9 @@ def main():
             single_model = args.model.split("/")[-1]
         else:
             single_model = args.model
-
-        model_params = params["models"][single_model][str(args.pred_len)]
+        
+        json_ft = args.features if args.features != "SM" else "M"
+        model_params = params["models"][json_ft][single_model][str(args.pred_len)]
         
         try:
             chkpt_path = glob.glob(os.path.join(params["zoo_path"], single_model, args.features, 
