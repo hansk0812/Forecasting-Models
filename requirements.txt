@@ -1,0 +1,9 @@
+einops
+scikit-learn
+matplotlib
+opt_einsum
+xlstm @ git+https://github.com/hansk0812/xlstm-lhf
+
+numpy
+torch
+pandas

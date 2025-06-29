@@ -1,0 +1,575 @@
+{
+    "zoo_path": "/home/hans/PhD/lhf_review_git/LHF-Model-Zoo-ETTm2/",
+    "models": {
+        "FEDformer": {
+            "96": {
+                "features": "M",
+                "seq_len": 96,
+                "label_len": 48,
+                "pred_len": 96,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 3
+            },
+            "192": {
+                "features": "M",
+                "seq_len": 192,
+                "label_len": 96,
+                "pred_len": 192,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 6
+            },
+            "336": {
+                "features": "M",
+                "seq_len": 336,
+                "label_len": 168,
+                "pred_len": 336,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 10
+            },
+            "720": {
+                "features": "M",
+                "seq_len": 720,
+                "label_len": 360,
+                "pred_len": 720,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 22
+            }
+        },
+        "Autoformer": {
+            "96": {
+                "features": "M",
+                "seq_len": 96,
+                "label_len": 48,
+                "pred_len": 96,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 3
+            },
+            "192": {
+                "features": "M",
+                "seq_len": 192,
+                "label_len": 96,
+                "pred_len": 192,
+                "d_model": 256,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 6
+            },
+            "336": {
+                "features": "M",
+                "seq_len": 336,
+                "label_len": 48,
+                "pred_len": 336,
+                "d_model": 256,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 4
+            },
+            "720": {
+                "features": "M",
+                "seq_len": 192,
+                "label_len": 96,
+                "pred_len": 720,
+                "d_model": 256,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 4
+            }
+        },
+        "Informer": {
+            "96": {
+                "features": "M",
+                "seq_len": 96,
+                "label_len": 48,
+                "pred_len": 96,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 3,
+				"distil": 1
+            },
+            "192": {
+                "features": "M",
+                "seq_len": 192,
+                "label_len": 96,
+                "pred_len": 192,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 6,
+				"distil": 1
+            },
+            "336": {
+                "features": "M",
+                "seq_len": 336,
+                "label_len": 168,
+                "pred_len": 336,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 4,
+				"distil": 1
+            },
+            "720": {
+                "features": "M",
+                "seq_len": 720,
+                "label_len": 48,
+                "pred_len": 720,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 4,
+				"distil": 1
+            }
+        },
+        "Triformer": {
+            "96": {
+                "features": "M",
+                "seq_len": 96,
+                "label_len": 48,
+                "pred_len": 96,
+                "d_model": 400,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 128,
+				"detail_freq": "(4,4,4)"
+            },
+            "192": {
+                "features": "M",
+                "seq_len": 192,
+                "label_len": 48,
+                "pred_len": 192,
+                "d_model": 400,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 128,
+				"detail_freq": "(4,4,4)"
+            },
+            "336": {
+                "features": "M",
+                "seq_len": 336,
+                "label_len": 48,
+                "pred_len": 336,
+                "d_model": 400,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 128,
+				"detail_freq": "(4,4,4)"
+            },
+            "720": {
+                "features": "M",
+                "seq_len": 720,
+                "label_len": 48,
+                "pred_len": 720,
+                "d_model": 400,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 128,
+				"detail_freq": "(4,4,4)"
+            }
+        },
+        "xLSTM_TS": {
+            "96": {
+                "features": "M",
+                "seq_len": 96,
+                "label_len": 0,
+                "pred_len": 96,
+                "enc_in": 4,
+                "d_model": 360,
+                "n_heads": 6,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 0,
+                "factor": 24,
+                "modes": 1,
+                "distil": 0
+            },
+            "192": {
+                "features": "M",
+                "seq_len": 192,
+                "label_len": 0,
+                "pred_len": 192,
+                "enc_in": 4,
+                "d_model": 360,
+                "n_heads": 6,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 0,
+                "factor": 24,
+                "modes": 1,
+                "distil": 0
+            },
+            "336": {
+                "features": "M",
+                "seq_len": 336,
+                "label_len": 0,
+                "pred_len": 336,
+                "enc_in": 4,
+                "d_model": 360,
+                "n_heads": 6,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 0,
+                "factor": 24,
+                "modes": 1,
+                "distil": 0
+            },
+            "720": {
+                "features": "M",
+                "seq_len": 720,
+                "label_len": 0,
+                "pred_len": 720,
+                "enc_in": 4,
+                "d_model": 360,
+                "n_heads": 6,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 0,
+                "factor": 24,
+                "modes": 1,
+                "distil": 0
+            }
+        },
+        "NBEATS": {
+            "96": {
+                "features": "SM",
+                "seq_len": 336,
+                "label_len": 48,
+                "pred_len": 96,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 3
+            },
+            "192": {
+                "features": "SM",
+                "seq_len": 336,
+                "label_len": 48,
+                "pred_len": 192,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 3
+            },
+            "336": {
+                "features": "SM",
+                "seq_len": 336,
+                "label_len": 48,
+                "pred_len": 336,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 3
+            },
+            "720": {
+                "features": "SM",
+                "seq_len": 720,
+                "label_len": 48,
+                "pred_len": 720,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 3
+            }
+        },
+        "NHITS": {
+            "96": {
+                "features": "SM",
+                "seq_len": 96,
+                "label_len": 48,
+                "pred_len": 96,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 3,
+				"enc_in": 1,
+				"dec_in": 1
+            },
+            "192": {
+                "features": "SM",
+                "seq_len": 192,
+                "label_len": 48,
+                "pred_len": 192,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 3,
+				"enc_in": 1,
+				"dec_in": 1
+            },
+            "336": {
+                "features": "SM",
+                "seq_len": 336,
+                "label_len": 48,
+                "pred_len": 336,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 3,
+				"enc_in": 1,
+				"dec_in": 1
+            },
+            "720": {
+                "features": "SM",
+                "seq_len": 720,
+                "label_len": 48,
+                "pred_len": 720,
+                "d_model": 512,
+                "n_heads": 8,
+                "e_layers": 1,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 3,
+				"enc_in": 1,
+				"dec_in": 1
+            }
+        },
+        "DLinear": {
+            "96": {
+                "features": "M",
+                "seq_len": 336,
+                "label_len": 48,
+                "pred_len": 96,
+                "d_model": 256,
+                "n_heads": 8,
+                "e_layers": 2,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 19
+            },
+            "192": {
+                "features": "M",
+                "seq_len": 336,
+                "label_len": 48,
+                "pred_len": 192,
+                "d_model": 256,
+                "n_heads": 8,
+                "e_layers": 2,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 19
+            },
+            "336": {
+                "features": "M",
+                "seq_len": 336,
+                "label_len": 48,
+                "pred_len": 336,
+                "d_model": 336,
+                "n_heads": 8,
+                "e_layers": 2,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 19
+            },
+            "720": {
+                "features": "M",
+                "seq_len": 720,
+                "label_len": 48,
+                "pred_len": 720,
+                "d_model": 336,
+                "n_heads": 8,
+                "e_layers": 2,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 19
+            }
+        },
+        "NLinear": {
+            "96": {
+                "features": "M",
+                "seq_len": 336,
+                "label_len": 48,
+                "pred_len": 96,
+                "d_model": 256,
+                "n_heads": 8,
+                "e_layers": 2,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 19
+            },
+            "192": {
+                "features": "M",
+                "seq_len": 336,
+                "label_len": 48,
+                "pred_len": 192,
+                "d_model": 256,
+                "n_heads": 8,
+                "e_layers": 2,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 19
+            },
+            "336": {
+                "features": "M",
+                "seq_len": 336,
+                "label_len": 48,
+                "pred_len": 336,
+                "d_model": 336,
+                "n_heads": 8,
+                "e_layers": 2,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 19
+            },
+            "720": {
+                "features": "M",
+                "seq_len": 720,
+                "label_len": 48,
+                "pred_len": 720,
+                "d_model": 336,
+                "n_heads": 8,
+                "e_layers": 2,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 19
+            }
+        },
+        "FiLM": {
+            "96": {
+                "features": "M",
+                "seq_len": 720,
+                "label_len": 0,
+                "pred_len": 96,
+                "d_model": 512,
+                "e_layers": 2,
+                "d_layers": 1,
+                "factor": 1
+            },
+            "192": {
+                "features": "M",
+                "seq_len": 720,
+                "label_len": 48,
+                "pred_len": 192,
+                "d_model": 512,
+                "e_layers": 2,
+                "d_layers": 1,
+                "factor": 1
+            },
+            "336": {
+                "features": "M",
+                "seq_len": 720,
+                "label_len": 48,
+                "pred_len": 336,
+                "d_model": 512,
+                "e_layers": 2,
+                "d_layers": 1,
+                "factor": 1
+            },
+            "720": {
+                "features": "M",
+                "seq_len": 2840,
+                "label_len": 48,
+                "pred_len": 720,
+                "d_model": 512,
+                "e_layers": 2,
+                "d_layers": 1,
+                "factor": 1
+            }
+        },
+        "TiDE": {
+            "96": {
+                "features": "M",
+                "seq_len": 360,
+                "label_len": 48,
+                "pred_len": 96,
+                "d_model": 64,
+                "n_heads": 8,
+                "e_layers": 2,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 4
+            },
+            "192": {
+                "features": "M",
+                "seq_len": 360,
+                "label_len": 48,
+                "pred_len": 192,
+                "d_model": 64,
+                "n_heads": 8,
+                "e_layers": 2,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 4
+            },
+            "336": {
+                "features": "M",
+                "seq_len": 360,
+                "label_len": 48,
+                "pred_len": 336,
+                "d_model": 64,
+                "n_heads": 8,
+                "e_layers": 2,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 4
+            },
+            "720": {
+                "features": "M",
+                "seq_len": 360,
+                "label_len": 48,
+                "pred_len": 720,
+                "d_model": 64,
+                "n_heads": 8,
+                "e_layers": 2,
+                "d_layers": 1,
+                "d_ff": 2048,
+                "factor": 4
+            }
+        }
+    }
+}
