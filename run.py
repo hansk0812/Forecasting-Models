@@ -1,5 +1,9 @@
 import argparse
+
 import os
+import glob
+import json
+
 import sys
 import torch
 from exp.exp_main import Exp_Main
@@ -93,6 +97,9 @@ def main():
     
     parser.add_argument('--load_from_chkpt', default=None, help="Path to pretrained model to resume training from")
 
+    parser.add_argument('--model_params_json', default=None, help="Path to JSON file with model hyperparameters and model zoo dir if available")
+    parser.add_argument('--patches_size', default=None, type=int, help="Divide H into H/patches_size models")
+    
     parser.add_argument('--start', default=1, type=float, help="AR SS arange param1")
     parser.add_argument('--step', default=1, type=float, help="AR SS arange param2")
     parser.add_argument('--lambdaval', default=0.5, type=float, help="AR SS weightage param")
@@ -108,6 +115,41 @@ def main():
         device_ids = args.devices.split(',')
         args.device_ids = [int(id_) for id_ in device_ids]
         args.gpu = args.device_ids[0]
+    
+    if not args.model_params_json is None and os.path.exists(args.model_params_json):
+        with open(args.model_params_json, 'r') as f:
+            params = json.load(f)
+        
+        if "LHF/" in args.model:
+            single_model = args.model.split("/")[-1]
+        else:
+            single_model = args.model
+
+        model_params = params["models"][single_model][str(args.pred_len)]
+        
+        try:
+            chkpt_path = glob.glob(os.path.join(params["zoo_path"], single_model, args.features, 
+                                    "*sl%d_*pl%d*" % (model_params["seq_len"], model_params["pred_len"])))[0]
+        
+            if os.path.isdir(chkpt_path):
+                chkpt_path = os.path.join(chkpt_path, "checkpoint.pth")
+            
+            args.load_from_chkpt = chkpt_path
+
+            if args.patches_size is None and args.is_train:
+                print ("Using model from model zoo with the same metric values")
+                exit()
+    
+        except Exception:
+            
+            import traceback
+            traceback.print_exc()
+            print ("\n\n", "."*75, "\n")
+            print ("\t Model: %s ; Horizon: %d CHECKPOINT FILE NOT FOUND IN ZOO" % (args.model, args.pred_len))
+            print ("\n\n", "."*75, "\n")
+
+        for param in model_params:
+            setattr(args, param, model_params[param])
 
     print('Args in experiment:')
     print(args)
@@ -117,7 +159,7 @@ def main():
     if args.is_training:
         for ii in range(args.itr):
             # setting record of experiments
-            setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(
+            setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_eb{}_dt{}_{}_{}'.format(
                 args.task_id,
                 args.model,
                 args.mode_select,
@@ -133,6 +175,7 @@ def main():
                 args.d_layers,
                 args.d_ff,
                 args.factor,
+                args.patches_size,
                 args.embed,
                 args.distil,
                 args.des,
@@ -152,7 +195,7 @@ def main():
             torch.cuda.empty_cache()
     else:
         ii = 0
-        setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(
+        setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_eb{}_dt{}_{}_{}'.format(
                 args.task_id,
                 args.model,
                 args.mode_select,
@@ -168,11 +211,19 @@ def main():
                 args.d_layers,
                 args.d_ff,
                 args.factor,
+                args.patches_len,
                 args.embed,
                 args.distil,
                 args.des,
                 ii)
+        
+        if not args.model_params_json is None:
+            chkpt_symlink = os.path.join("checkpoints", setting, "checkpoint.pth")
+            if not os.path.exists(os.path.dirname(chkpt_symlink)):
+                os.makedirs(os.path.dirname(chkpt_symlink))
 
+            if not args.load_from_chkpt is None and not os.path.islink(chkpt_symlink):
+                os.symlink(args.load_from_chkpt, chkpt_symlink)
 
         exp = Exp(args)  # set experiments
         print ('test > mse:', args.model, args.pred_len, 'horizon size')

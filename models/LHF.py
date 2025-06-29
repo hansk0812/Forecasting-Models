@@ -16,25 +16,56 @@ from . import NBEATS, NHITS
 from . import xLSTM_TS
 from . import NLinearLHF
 
+import gc
 
+from model_size import model_size
+
+import traceback
+import copy
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Model(nn.Module):
     """
-    H/patch_length LHF models
+    H/patches_size LHF models
     """
     def __init__(self, configs):
         super(Model, self).__init__()
         
-        self.patch_length = configs.patch_length
+        self.patches_size = configs.patches_size
         self.pred_len = configs.pred_len
+        self.label_len = configs.label_len
         self.output_attention = configs.output_attention
+        
+        patch_model_configs = copy.deepcopy(configs)
 
-        assert configs.pred_len % configs.patch_length == 0, "GUI assertion!"
-        configs.pred_len = configs.patch_length
-        self.networks = nn.ModuleList([self._build_model(configs) for _ in range(self.pred_len//self.patch_length)])
+        assert configs.pred_len % configs.patches_size == 0, "GUI assertion!"
+        patch_model_configs.pred_len = configs.patches_size
 
+        self.networks = nn.ModuleList([self._build_model(patch_model_configs) for _ in range(self.pred_len//self.patches_size)])
+
+        try:
+            for net in self.networks:
+                chkpt_f = torch.load(configs.load_from_chkpt)
+                chkpt_m = net.state_dict()
+
+                for cf, cm in zip(chkpt_f, chkpt_m):
+                    assert cf == cm, "Name conflict in checkpoint file: %s in file vs %s in model" % (cf, cm)
+                    if not all([chkpt_f[cf].shape[idx]==chkpt_m[cm].shape[idx] for idx in range(len(chkpt_f[cf].shape))]):
+                        print ("Skipping %s from checkpoint file!" % cf)
+                        continue
+                    chkpt_m[cm] = chkpt_f[cf]
+
+            print ("\n", "."*50, "\nLoaded %d copies of original model\n" % (self.pred_len // configs.patches_size), "."*50, "\n") 
+        except Exception:
+            traceback.print_exc()
+            try:
+                self.load_state_dict(torch.load(configs.load_from_chkpt))
+                print ("\n", "."*50, "Loaded single checkpoint with all composing models!", "."*50, "\n") 
+            except Exception:
+                traceback.print_exc()
+                print ("Cannot load checkpoint from file!")
+    
     def _build_model(self, args):
         model_dict = {
             'FEDformer': FEDformer,
@@ -54,28 +85,49 @@ class Model(nn.Module):
         model_name = args.model.split('/')[-1]
         model = model_dict[model_name].Model(args).float()
         
-        if not args.load_from_chkpt is None:
-            model.load_state_dict(torch.load(args.load_from_chkpt, weights_only=True))
+        if "LHF/" in args.model:
+            try:
+                if not args.load_from_chkpt is None:
+                    model.load_state_dict(torch.load(args.load_from_chkpt, weights_only=True))
+            except Exception:
+                traceback.print_exc()
+                print ("COULDN'T LOAD CHECKPOINT INTO COMPOSED MODELS")
+        else:
+            if not args.load_from_chkpt is None:
+                model.load_state_dict(torch.load(args.load_from_chkpt, weights_only=True))
 
         if args.use_multi_gpu and args.use_gpu:
             model = nn.DataParallel(model, device_ids=args.device_ids)
 
         return model
+    
+    def split_dec(self, dec):
+        num_models = self.pred_len // self.patches_size
+        target_len = self.pred_len//num_models
+        dec_labels = [dec[:,:self.label_len,:] for idx in range(num_models)]
+        dec_preds = [dec[:,(self.label_len + idx*target_len):(self.label_len + (idx+1)*target_len),:] for idx in range(num_models)]
+        outs = [torch.cat((x,y), dim=1) for x,y in zip(dec_labels, dec_preds)]
+        return outs
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec,
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None):
         
+        x_dec_patch = self.split_dec(x_dec)
+        x_mark_dec_patch = self.split_dec(x_mark_dec)
+        
+        if not dec_self_mask is None:
+            raise NotImplementedError
+
         out_final, attns_final = [], []
         for idx in range(len(self.networks)):
             if self.output_attention:
-                out, attns = self.networks[idx](x_enc, x_mark_enc, x_dec, x_mark_dec,
+                out, attns = self.networks[idx](x_enc, x_mark_enc, x_dec_patch[idx], x_mark_dec_patch[idx],
                                                 enc_self_mask, dec_self_mask, dec_enc_mask)
                 out_final.append(out[:, -self.pred_len:, :])
                 attns_final.append(out)
             else:
-                out = self.networks[idx](x_enc, x_mark_enc, x_dec, x_mark_dec,
+                out = self.networks[idx](x_enc, x_mark_enc, x_dec_patch[idx], x_mark_dec_patch[idx],
                                             enc_self_mask, dec_self_mask, dec_enc_mask)
-                print (out.shape)
                 out_final.append(out[:, -self.pred_len:, :])
         
         out_final = torch.concat(out_final, dim=1)
@@ -97,23 +149,22 @@ if __name__ == '__main__':
         L = 1
         base = 'legendre'
         cross_activation = 'tanh'
-        seq_len = 96
-        label_len = 48
-        pred_len = 96
+        seq_len = 720
+        label_len = 360
+        pred_len = 720
         output_attention = False
         enc_in = 7
         dec_in = 7
-        d_model = 16
+        d_model = 512
         embed = 'timeF'
         dropout = 0.05
         freq = 'h'
         
-        # Triformer = 24, rest = 1
-        factor = 24
+        factor = 22
 
         n_heads = 8
-        d_ff = 16
-        e_layers = 2
+        d_ff = 2048
+        e_layers = 1
         d_layers = 1
         c_out = 7
         activation = 'gelu'
@@ -124,46 +175,52 @@ if __name__ == '__main__':
         use_gpu = True
 
         model = "FEDformer"
-        patch_length = 24
+        patches_size = 720 #180
 
-        # Informer
+        # Informer, xLSTM
         distil = True
         
         # Triformer
         patch_sizes = (2,3,4)
     
+        load_from_chkpt = None
+    
     kwargs = {}
-    kwargs["Autoformer"] = {"factor": 1}
+    kwargs["Autoformer"] = {"factor": 1, "d_model": 256}
     kwargs["Triformer"] = {"detail_freq": "(2,3,4)", "factor": 24}
     kwargs["Informer"] = {"factor": 1, "distil": True}
     kwargs["DLinear"] = {"factor": 7, "features": "M"}
     kwargs["NLinear"] = {"factor": 7, "features": "M"}
     kwargs["NLinearLHF"] = {"factor": 7, "features": "M", "start": 0.3, "step": 0.3, "lambdaval": 0.5}
     kwargs["TiDE"] = {"factor": 4, "features": "M"}
-    kwargs["xLSTM_TS"] = {"factor": 24, "features": "M", "recurrent": False, "enc_in": 4, "d_model": 144, "n_heads": 4, "d_ff": 0, "modes": 2}
+    kwargs["xLSTM_TS"] = {"factor": 24, "features": "M", "recurrent": False, "enc_in": 4, "e_layers": 1, "d_layers": 1, 
+                            "d_model": 144, "n_heads": 6, "d_ff": 0, "modes": 1}
     kwargs["NHITS"] = {"enc_in": 1, "dec_in": 1, "features": "S"}
     kwargs["NBEATS"] = {"enc_in": 1, "dec_in": 1, "features": "S"}
     
+    kwargs["Pyraformer"] = {"seq_len": 384, }
+
     SM_models = ["NBEATS", "NHITS"]
 
-    for model_name in ['FEDformer', 'Autoformer', 'Transformer', 'Informer',
-                  'Triformer', 'FiLM', 'DLinear', 'NLinear', 'NBEATS', 'NHITS',
-                  'NLinearLHF', 'TiDE', 'xLSTM_TS']:
+    for model_name in ['FEDformer', 'Autoformer', 'Informer', 'Triformer', 
+                        'FiLM', 'DLinear', 'NLinear', 'NBEATS', 'NHITS', 
+                        'NLinearLHF', 'TiDE', 'xLSTM_TS']:
         
         print (model_name)
-        
+           
         configs = Configs()
         if model_name in kwargs:
             configs.__dict__.update(kwargs[model_name])
         
         configs.model = model_name
+        configs.load_from_chkpt = "../LHF-Model-Zoo-ETTm2/FEDformer/M/ETTm2_FEDformer_random_modes64_ETTm2_ftM_sl720_ll360_pl720_dm512_nh8_el1_dl1_df2048_fc22_ebtimeF_dtTrue_Exp_0.pth"
         
-        import sys
+        import os, sys
         save_stdout = sys.stdout
         sys.stdout = open('trash', 'w')
         
         model = Model(configs).to(device)
-        
+
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print('parameter number is {}'.format(sum(p.numel() for p in model.parameters())))
         
@@ -173,5 +230,14 @@ if __name__ == '__main__':
         dec_mark = torch.randn([3, configs.seq_len//2+configs.pred_len, 4]).to(device)
         
         out = model.forward(enc, enc_mark, dec, dec_mark)
+        
         sys.stdout = save_stdout
+        os.remove('trash')
+
         print(out.shape)
+        print ("Model size:", model_size(model), "MB")
+
+        model.cpu()
+        del model
+        gc.collect()
+        torch.cuda.empty_cache()

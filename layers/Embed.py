@@ -29,18 +29,15 @@ class TokenEmbedding(nn.Module):
     def __init__(self, c_in, d_model):
         super(TokenEmbedding, self).__init__()
         padding = 1 if torch.__version__ >= '1.5.0' else 2
-
         self.tokenConv = nn.Conv1d(in_channels=c_in, out_channels=d_model,
-                                   kernel_size=3, padding=padding, bias=True, padding_mode='circular')
+                                   kernel_size=3, padding=padding, padding_mode='circular', bias=True) #False)
         #self.tokenConv = nn.Linear(c_in, d_model)
 
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
-                #nn.init.xavier_uniform_(m.weight, nonlinearity='leaky_relu')
-                nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
+                nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
 
     def forward(self, x):
-        #x = self.tokenConv(x)
         x = self.tokenConv(x.permute(0, 2, 1)).transpose(1, 2)
         return x
 
@@ -147,8 +144,7 @@ class DataEmbedding_wo_pos(nn.Module):
 
     def forward(self, x, x_mark):
         # try:
-        x = self.value_embedding(x)
-        x += self.temporal_embedding(x_mark)
+        x = self.value_embedding(x) + self.temporal_embedding(x_mark)
         # except:
         #     a = 1
         return self.dropout(x)

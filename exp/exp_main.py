@@ -2,6 +2,9 @@ import os
 import time
 import warnings
 import numpy as np
+
+import traceback
+
 import torch
 import torch.nn as nn
 from torch import optim
@@ -11,6 +14,9 @@ from models import FEDformer, Autoformer, Informer, Transformer, Triformer, FiLM
 from models import DLinear, NLinear, NHITS, TiDE, NBEATS
 from models import xLSTM_TS
 from models import NLinearLHF
+
+from models import LHF
+
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
 from utils.metrics import metric
 
@@ -19,52 +25,65 @@ import numpy as np; np.random.seed(1)
 
 warnings.filterwarnings('ignore')
 
-
 class Exp_Main(Exp_Basic):
     def __init__(self, args):
         super(Exp_Main, self).__init__(args)
 
     def _build_model(self):
-        model_dict = {
-            'FEDformer': FEDformer,
-            'Autoformer': Autoformer,
-            'Transformer': Transformer,
-            'Informer': Informer,
-            'Triformer': Triformer,
-            'FiLM': FiLM,
-            'DLinear': DLinear,
-            'NLinear': NLinear,
-            'NLinearLHF': NLinearLHF,
-            'NHITS': NHITS,
-            'TiDE': TiDE,
-            'NBEATS': NBEATS,
-        }
-        try:
-            model_dict['xLSTM_TS'] = xLSTM_TS
-            if self.args.model == 'xLSTM_TS':
-                import xlstm
-                xlstm_dir = os.path.dirname(xlstm.__file__)
-                os.system(
-                        "sed -i \"s/self.config.embedding_dim=.*/self.config.embedding_dim=%d/\" \"%s/blocks/slstm/layer.py\"" \
-                                % (self.args.d_model, xlstm_dir))
-                os.system(
-                        "sed -i \"s/self.config.embedding_dim = .*/self.config.embedding_dim = %d/\" \"%s/blocks/mlstm/layer.py\"" \
-                                % (self.args.d_model, xlstm_dir))
-                os.system(
-                        "sed -i \"s/embedding_dim: int = .*/embedding_dim: int = %d/\" %s/xlstm_block_stack.py" \
-                                % (self.args.d_model, xlstm_dir))
-                
-                print ("xLSTM import complete with changes to package!")
 
-        except Exception:
-            import traceback
-            traceback.print_exc()
-            pass
+        if "LHF/" in self.args.model:
+            model = LHF.Model(self.args).float()    
+        else:
+            model_dict = {
+                'FEDformer': FEDformer,
+                'Autoformer': Autoformer,
+                'Transformer': Transformer,
+                'Informer': Informer,
+                'Triformer': Triformer,
+                'FiLM': FiLM,
+                'DLinear': DLinear,
+                'NLinear': NLinear,
+                'NLinearLHF': NLinearLHF,
+                'NHITS': NHITS,
+                'TiDE': TiDE,
+                'NBEATS': NBEATS,
+            }
+            try:
+                model_dict['xLSTM_TS'] = xLSTM_TS
+                if self.args.model == 'xLSTM_TS':
+                    import xlstm
+                    xlstm_dir = os.path.dirname(xlstm.__file__)
+                    os.system(
+                            "sed -i \"s/self.config.embedding_dim=.*/self.config.embedding_dim=%d/\" \"%s/blocks/slstm/layer.py\"" \
+                                    % (self.args.d_model, xlstm_dir))
+                    os.system(
+                            "sed -i \"s/self.config.embedding_dim = .*/self.config.embedding_dim = %d/\" \"%s/blocks/mlstm/layer.py\"" \
+                                    % (self.args.d_model, xlstm_dir))
+                    os.system(
+                            "sed -i \"s/embedding_dim: int = .*/embedding_dim: int = %d/\" %s/xlstm_block_stack.py" \
+                                    % (self.args.d_model, xlstm_dir))
+                    
+                    print ("xLSTM import complete with changes to package!")
 
-        model = model_dict[self.args.model].Model(self.args).float()
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                pass
+
+            model = model_dict[self.args.model].Model(self.args).float()
         
         if not self.args.load_from_chkpt is None:
-            model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
+            if "LHF/" in self.args.model:
+                try:
+                    model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
+                except Exception:
+                    #import traceback
+                    #traceback.print_exc()
+                    print (type(self.args.pred_len), type(self.args.patches_size))
+                    print ("COULDN'T LOAD CHECKPOINT FROM FILE OVER PATCHES MODELS! 1 vs n NETWORKS, SIZE DIFFERENCES")
+            else:
+                model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
+                print ("\n", "."*50, "\n\nLoaded initial model from %s\n\n" % self.args.load_from_chkpt, "."*50)
 
         #from model_size import model_size
         #print('model size: {:.3f}MB'.format(model_size(model))); exit()
@@ -263,6 +282,7 @@ class Exp_Main(Exp_Basic):
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
                 print ('batch %d/%d' % (i, len(test_loader)), end='\r')
+                exit()
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
 
