@@ -119,7 +119,8 @@ def main():
         with open(args.model_params_json, 'r') as f:
             params = json.load(f)
         
-        model_params = params["models"][args.model][str(args.pred_len)]
+        ft_json = args.features if args.features != "SM" else "M"
+        model_params = params["models"][ft_json][args.model][str(args.pred_len)]
         
         try:
             chkpt_path = glob.glob(os.path.join(params["zoo_path"], args.model.split('/')[-1], \
