@@ -98,7 +98,7 @@ def main():
     parser.add_argument('--load_from_chkpt', default=None, help="Path to pretrained model to resume training from")
 
     parser.add_argument('--model_params_json', default=None, help="Path to JSON file with model hyperparameters and model zoo dir if available")
-    parser.add_argument('--patches_size', default=None, type=int, help="Divide H into H/patches_size models")
+    parser.add_argument('--patches_size', default=0, type=int, help="Divide H into H/patches_size models")
     
     parser.add_argument('--start', default=1, type=float, help="AR SS arange param1")
     parser.add_argument('--step', default=1, type=float, help="AR SS arange param2")
@@ -137,7 +137,7 @@ def main():
             
             args.load_from_chkpt = chkpt_path
 
-            if args.patches_size is None and args.is_train:
+            if args.patches_size==0 and args.is_training:
                 print ("Using model from model zoo with the same metric values")
                 exit()
     

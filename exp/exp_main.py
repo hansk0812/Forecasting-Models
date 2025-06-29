@@ -12,7 +12,7 @@ from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
 
 from models import FEDformer, Autoformer, Informer, Transformer
-from models import DLinear, NLinear, NHITS, TiDE, NBEATS
+from models import DLinear, NLinear, NHITS, TiDE, NBEATS, FiLM
 from models import Pyraformer, Triformer
 from models import xLSTM_TS
 

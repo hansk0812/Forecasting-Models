@@ -44,28 +44,29 @@ class Model(nn.Module):
         patch_model_configs.pred_len = configs.patches_size
 
         self.networks = nn.ModuleList([self._build_model(patch_model_configs) for _ in range(self.pred_len//self.patches_size)])
-
-        try:
-            for net in self.networks:
-                chkpt_f = torch.load(configs.load_from_chkpt)
-                chkpt_m = net.state_dict()
-                
-                for cf, cm in zip(chkpt_f, chkpt_m):
-                    if not all([chkpt_f[cf].shape[idx]==chkpt_m[cm].shape[idx] for idx in range(len(chkpt_f[cf].shape))]):
-                        print ("Skipping %s from checkpoint file!" % cf)
-                        continue
-                    #assert cf == cm, "Name conflict in checkpoint file: %s in file vs %s in model" % (cf, cm)
-                    chkpt_m[cm] = chkpt_f[cf]
-
-            print ("\n", "."*50, "\nLoaded %d copies of original model\n" % (self.pred_len // configs.patches_size), "."*50, "\n") 
-        except Exception:
-            traceback.print_exc()
+        
+        if not configs.load_from_chkpt is None:
             try:
-                self.load_state_dict(torch.load(configs.load_from_chkpt))
-                print ("\n", "."*50, "Loaded single checkpoint with all composing models!", "."*50, "\n") 
+                for net in self.networks:
+                    chkpt_f = torch.load(configs.load_from_chkpt)
+                    chkpt_m = net.state_dict()
+                    
+                    for cf, cm in zip(chkpt_f, chkpt_m):
+                        if not all([chkpt_f[cf].shape[idx]==chkpt_m[cm].shape[idx] for idx in range(len(chkpt_f[cf].shape))]):
+                            print ("Skipping %s from checkpoint file!" % cf)
+                            continue
+                        #assert cf == cm, "Name conflict in checkpoint file: %s in file vs %s in model" % (cf, cm)
+                        chkpt_m[cm] = chkpt_f[cf]
+
+                print ("\n", "."*50, "\nLoaded %d copies of original model\n" % (self.pred_len // configs.patches_size), "."*50, "\n") 
             except Exception:
                 traceback.print_exc()
-                print ("Cannot load checkpoint from file!")
+                try:
+                    self.load_state_dict(torch.load(configs.load_from_chkpt))
+                    print ("\n", "."*50, "Loaded single checkpoint with all composing models!", "."*50, "\n") 
+                except Exception:
+                    traceback.print_exc()
+                    print ("Cannot load checkpoint from file!")
     
     def _build_model(self, args):
         model_dict = {
