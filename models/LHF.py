@@ -10,9 +10,10 @@ from layers.Autoformer_EncDec import Encoder, Decoder, EncoderLayer, DecoderLaye
 import math
 import numpy as np
 
-from . import FEDformer, Autoformer, Informer, Transformer, Triformer
+from . import FEDformer, Autoformer, Informer, Transformer
 from . import DLinear, NLinear, TiDE, FiLM
 from . import NBEATS, NHITS
+from . import Pyraformer, Triformer
 from . import xLSTM_TS
 from . import NLinearLHF
 
@@ -48,7 +49,7 @@ class Model(nn.Module):
             for net in self.networks:
                 chkpt_f = torch.load(configs.load_from_chkpt)
                 chkpt_m = net.state_dict()
-
+                
                 for cf, cm in zip(chkpt_f, chkpt_m):
                     if not all([chkpt_f[cf].shape[idx]==chkpt_m[cm].shape[idx] for idx in range(len(chkpt_f[cf].shape))]):
                         print ("Skipping %s from checkpoint file!" % cf)
@@ -72,6 +73,7 @@ class Model(nn.Module):
             'Autoformer': Autoformer,
             'Transformer': Transformer,
             'Informer': Informer,
+            'Pyraformer': Pyraformer,
             'Triformer': Triformer,
             'FiLM': FiLM,
             'DLinear': DLinear,

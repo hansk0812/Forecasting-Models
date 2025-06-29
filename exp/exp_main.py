@@ -10,9 +10,12 @@ import torch.nn as nn
 from torch import optim
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
-from models import FEDformer, Autoformer, Informer, Transformer, Triformer, FiLM
+
+from models import FEDformer, Autoformer, Informer, Transformer
 from models import DLinear, NLinear, NHITS, TiDE, NBEATS
+from models import Pyraformer, Triformer
 from models import xLSTM_TS
+
 from models import NLinearLHF
 
 from models import LHF
@@ -47,6 +50,7 @@ class Exp_Main(Exp_Basic):
                 'NHITS': NHITS,
                 'TiDE': TiDE,
                 'NBEATS': NBEATS,
+                'Pyraformer': Pyraformer
             }
             try:
                 model_dict['xLSTM_TS'] = xLSTM_TS
