@@ -223,7 +223,7 @@ class Model(nn.Module):
             self.mlp = nn.Linear(len(self.multiscale)*len(self.window_size), 1)
         
 
-    def forward(self, x_enc, x_mark_enc, x_dec_true, x_mark_dec, v1, v2, v3):
+    def forward(self, x_enc, x_mark_enc, x_dec_true, x_mark_dec, v1=None, v2=None, v3=None):
         # decomp init
         
         if self.ab == 2:
