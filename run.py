@@ -212,7 +212,7 @@ def main():
                 args.d_layers,
                 args.d_ff,
                 args.factor,
-                args.patches_len,
+                args.patches_size,
                 args.embed,
                 args.distil,
                 args.des,
@@ -224,7 +224,8 @@ def main():
                 os.makedirs(os.path.dirname(chkpt_symlink))
 
             if not args.load_from_chkpt is None and not os.path.islink(chkpt_symlink):
-                os.symlink(args.load_from_chkpt, chkpt_symlink)
+                if not os.path.exists(chkpt_symlink):
+                    os.symlink(args.load_from_chkpt, chkpt_symlink)
 
         exp = Exp(args)  # set experiments
         print ('test > mse:', args.model, args.pred_len, 'horizon size')
