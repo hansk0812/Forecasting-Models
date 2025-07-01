@@ -67,7 +67,9 @@ class Model(nn.Module):
                 except Exception:
                     traceback.print_exc()
                     print ("Cannot load checkpoint from file!")
-    
+        
+        self.self_supervision = configs.self_supervised_patches
+
     def _build_model(self, args):
         model_dict = {
             'FEDformer': FEDformer,
@@ -123,6 +125,12 @@ class Model(nn.Module):
 
         out_final, attns_final = [], []
         for idx in range(len(self.networks)):
+            
+            if self.self_supervision:
+                if idx > 0:
+                    x_enc = torch.cat((x_enc, out[:,-self.pred_len:,:]), dim=1)[:,self.pred_len:,:]
+                    x_dec_patch[idx] = torch.cat((out[:,-self.label_len:,:], x_dec_patch[idx][:,self.label_len:,:]), dim=1)
+
             if self.output_attention:
                 out, attns = self.networks[idx](x_enc, x_mark_enc, x_dec_patch[idx], x_mark_dec_patch[idx],
                                                 enc_self_mask, dec_self_mask, dec_enc_mask)
@@ -207,7 +215,7 @@ if __name__ == '__main__':
 
     for model_name in ['FEDformer', 'Autoformer', 'Informer', 'Triformer', 
                         'FiLM', 'DLinear', 'NLinear', 'NBEATS', 'NHITS', 
-                        'NLinearLHF', 'TiDE', 'xLSTM_TS']:
+                        'NLinearLHF', 'TiDE', 'xLSTM_TS'][4:5]:
         
         print (model_name)
            
@@ -216,11 +224,10 @@ if __name__ == '__main__':
             configs.__dict__.update(kwargs[model_name])
         
         configs.model = model_name
-        configs.load_from_chkpt = "../LHF-Model-Zoo-ETTm2/FEDformer/M/ETTm2_FEDformer_random_modes64_ETTm2_ftM_sl720_ll360_pl720_dm512_nh8_el1_dl1_df2048_fc22_ebtimeF_dtTrue_Exp_0.pth"
         
         import os, sys
         save_stdout = sys.stdout
-        sys.stdout = open('trash', 'w')
+        #sys.stdout = open('trash', 'w')
         
         model = Model(configs).to(device)
 
