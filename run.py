@@ -10,6 +10,12 @@ from exp.exp_main import Exp_Main
 import random
 import numpy as np
 
+def remove_param(setting, param_shorthand):
+    
+    setting_split = setting.split(param_shorthand)
+    setting = setting_split[0] + setting_split[1].split('_')[-1]
+
+    return setting
 
 def main():
     fix_seed = 2021
@@ -99,6 +105,7 @@ def main():
 
     parser.add_argument('--model_params_json', default=None, help="Path to JSON file with model hyperparameters and model zoo dir if available")
     parser.add_argument('--patches_size', default=0, type=int, help="Divide H into H/patches_size models")
+    parser.add_argument('--self_supervised_patches', action="store_true", help="Add self-supervision to patches-based splitting of models")
     
     parser.add_argument('--start', default=1, type=float, help="AR SS arange param1")
     parser.add_argument('--step', default=1, type=float, help="AR SS arange param2")
@@ -160,7 +167,7 @@ def main():
     if args.is_training:
         for ii in range(args.itr):
             # setting record of experiments
-            setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_eb{}_dt{}_{}_{}'.format(
+            setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_ss{}_eb{}_dt{}_{}_{}'.format(
                 args.task_id,
                 args.model,
                 args.mode_select,
@@ -177,10 +184,15 @@ def main():
                 args.d_ff,
                 args.factor,
                 args.patches_size,
+                args.self_supervised_patches,
                 args.embed,
                 args.distil,
                 args.des,
                 ii)
+            if args.patches_size == 0:
+                setting = remove_param(setting, "pt")
+            if not args.self_supervised_patches:
+                setting = remove_param(setting, "ss")
 
             exp = Exp(args)  # set experiments
             print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
@@ -196,7 +208,7 @@ def main():
             torch.cuda.empty_cache()
     else:
         ii = 0
-        setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_eb{}_dt{}_{}_{}'.format(
+        setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_ss{}_eb{}_dt{}_{}_{}'.format(
                 args.task_id,
                 args.model,
                 args.mode_select,
@@ -213,11 +225,16 @@ def main():
                 args.d_ff,
                 args.factor,
                 args.patches_size,
+                args.self_supervised_patches,
                 args.embed,
                 args.distil,
                 args.des,
                 ii)
-        
+            if args.patches_size == 0:
+                setting = remove_param(setting, "pt")
+            if not args.self_supervised_patches:
+                setting = remove_param(setting, "ss")
+
         if not args.model_params_json is None:
             chkpt_symlink = os.path.join("checkpoints", setting, "checkpoint.pth")
             if not os.path.exists(os.path.dirname(chkpt_symlink)):
