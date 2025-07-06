@@ -1,1 +1,3 @@
 *__pycache__*
+scripts/train*.sh
+scripts/run*.sh
