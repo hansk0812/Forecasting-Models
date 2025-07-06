@@ -16,6 +16,9 @@ from models import DLinear, NLinear, NHITS, TiDE, NBEATS, FiLM
 from models import Pyraformer, Triformer
 from models import xLSTM_TS
 
+from models import SAMformer
+from models import CycleNet
+
 from models import NLinearLHF
 
 from models import LHF
@@ -27,6 +30,39 @@ import matplotlib.pyplot as plt
 import numpy as np; np.random.seed(1)
 
 warnings.filterwarnings('ignore')
+
+class BackwardPassInspectLoss(nn.Module):
+
+    def __init__(self, horizon, cutoff, cutoff_type, device, loss="mae"):
+        # cutoff: For a given horizon, 0:cutoff are 1 and cutoff:horizon are 0
+        
+        super().__init__()
+        assert cutoff <= horizon, "GUI Assertion!"
+
+        self.mask = torch.ones(horizon).to(device)
+        if cutoff_type == "forward":
+            self.mask[cutoff:] = 0
+        else:
+            self.mask[:cutoff] = 0
+
+        if loss.lower() == "mse":
+            self.loss_fn = self.MSE_per_timestep
+        else:
+            self.loss_fn = self.MAE_per_timestep
+
+    def MSE_per_timestep(self, x, y):
+        # B, H, D
+        return torch.mean((x-y)**2, dim=(2))
+    
+    def MAE_per_timestep(self, x, y):
+        # B, H, D
+        return torch.mean(torch.abs(x-y), dim=(0,2))
+
+    def forward(self, x, y):
+        
+        loss = self.loss_fn(x, y)
+        loss *= self.mask
+        return torch.mean(loss)
 
 class Exp_Main(Exp_Basic):
     def __init__(self, args):
@@ -50,7 +86,9 @@ class Exp_Main(Exp_Basic):
                 'NHITS': NHITS,
                 'TiDE': TiDE,
                 'NBEATS': NBEATS,
-                'Pyraformer': Pyraformer
+                'Pyraformer': Pyraformer,
+                'SAMformer': SAMformer,
+                'CycleNet': CycleNet
             }
             try:
                 model_dict['xLSTM_TS'] = xLSTM_TS
@@ -75,6 +113,7 @@ class Exp_Main(Exp_Basic):
                 pass
 
             model = model_dict[self.args.model].Model(self.args).float()
+           
         
         if not self.args.load_from_chkpt is None:
             if "LHF/" in self.args.model:
@@ -85,7 +124,10 @@ class Exp_Main(Exp_Basic):
                     #traceback.print_exc()
                     print ("COULDN'T LOAD CHECKPOINT FROM FILE OVER PATCHES MODELS! 1 vs n NETWORKS, SIZE DIFFERENCES")
             else:
-                model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
+                try:
+                    model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
+                except Exception:
+                    pass
                 print ("\n", "."*50, "\n\nLoaded initial model from %s\n\n" % self.args.load_from_chkpt, "."*50)
 
         #from model_size import model_size
@@ -103,15 +145,19 @@ class Exp_Main(Exp_Basic):
         model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
-    def _select_criterion(self):
-        criterion = nn.MSELoss()
+    def _select_criterion(self, backward_pass_inspect_cutoff=None, inspect_type=None, horizon=None):
+        if backward_pass_inspect_cutoff is None:
+            criterion = nn.MSELoss()
+        else:
+            assert not horizon is None, "Interpreters!"
+            criterion = BackwardPassInspectLoss(horizon, backward_pass_inspect_cutoff, inspect_type, device=self.device)
         return criterion
 
     def vali(self, vali_data, vali_loader, criterion):
         total_loss = []
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_cycle) in enumerate(vali_loader):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float()
 
@@ -124,15 +170,22 @@ class Exp_Main(Exp_Basic):
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
+                        
+                        if self.args.model != "CycleNet":
+                            if self.args.output_attention:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                        else:
+                            outputs = self.model(batch_x, batch_cycle)
+                else:
+                    if self.args.model != "CycleNet":
                         if self.args.output_attention:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                         else:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                else:
-                    if self.args.output_attention:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                     else:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                        outputs = self.model(batch_x, batch_cycle)
                 batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
 
                 pred = outputs.detach().cpu()
@@ -164,6 +217,13 @@ class Exp_Main(Exp_Basic):
 
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
+        
+        if not self.args.inspect_backward_pass is None:
+
+            grad_norms_per_timestep = {"forward": [torch.zeros(len(train_loader)) \
+                                                        for _ in range(self.args.pred_len)],
+                                       "backward": [torch.zeros(len(train_loader)) \
+                                                        for _ in range(self.args.pred_len)]}
 
         for epoch in range(self.args.train_epochs):
             iter_count = 0
@@ -172,7 +232,7 @@ class Exp_Main(Exp_Basic):
             self.model.train()
 
             epoch_time = time.time()
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_cycle) in enumerate(train_loader):
                 iter_count += 1
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
@@ -186,28 +246,42 @@ class Exp_Main(Exp_Basic):
                 # decoder input
                 dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
                 dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
-
+                
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
-                        if self.args.output_attention:
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                        if self.args.model == "CycleNet":
+                            if self.args.output_attention:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                         else:
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                            outputs = self.model(batch_x, batch_cycle)
 
                         batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
                         loss = criterion(outputs, batch_y)
                         train_loss.append(loss.item())
                 else:
-                    if self.args.output_attention:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                    if self.args.model != "CycleNet":
+                        if self.args.output_attention:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                        else:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                     else:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                    
+                        outputs = self.model(batch_x, batch_cycle)
                     batch_y = batch_y[:, -self.args.pred_len:, :]
                     
                     loss = criterion(outputs, batch_y)
                     train_loss.append(loss.item())
+                
+                if i==5 and self.args.gpu_memory_usage:
+                    from model_size import model_size
+                    print ("MEMORY: Model Size: %s: %fMB" % (self.args.model, model_size(self.model)))
+                    print ("MEMORY: GPU summary (in GB) after backward pass:")
+                    print ("allocated per data pt:", torch.cuda.memory_allocated(self.device)/(1024.*1024*1024*self.args.batch_size))
+                    print ("reserved per data pt:", torch.cuda.memory_reserved(self.device)/(1024.*1024*1024*self.args.batch_size))
+                    print ("Time per epoch: %f hours" % ((time.time()-epoch_time)*len(train_loader)/(6.*60*60)))
+                    exit()               
 
                 if (i + 1) % 100 == 0:
                     # print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
@@ -222,22 +296,49 @@ class Exp_Main(Exp_Basic):
                     scaler.step(model_optim)
                     scaler.update()
                 else:
-                    loss.backward()
-                    model_optim.step()
-                
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
-            train_loss = np.average(train_loss)
-            vali_loss = self.vali(vali_data, vali_loader, criterion)
-            test_loss = self.vali(test_data, test_loader, criterion)
-            
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-            early_stopping(test_loss, self.model, path)
-            if early_stopping.early_stop:
-                print("Early stopping")
-                break
+                    if self.args.inspect_backward_pass is None:
+                        loss.backward()
+                        model_optim.step()
+                    else:
+                        if epoch > 0:
+                            for idx in range(self.args.pred_len):
+                                if self.args.inspect_backward_pass == "backward":
+                                    print ("Grad norm for H: %d->%d: %.5f" % (idx+1, self.args.pred_len, 
+                                                                                grad_norms_per_timestep["backward"][idx].mean()))
+                                else:
+                                    print ("Grad norm for H: %d->%d: %.5f" % (1, idx+1, 
+                                                                                grad_norms_per_timestep["forward"][idx].mean()))
+                            exit()
 
-            adjust_learning_rate(model_optim, epoch + 1, self.args)
+                        for h in range(self.args.pred_len):
+                            criterion = self._select_criterion(backward_pass_inspect_cutoff=h, 
+                                            inspect_type=self.args.inspect_backward_pass, horizon=self.args.pred_len)
+                            loss = criterion(outputs, batch_y)
+                            loss.backward(retain_graph=True)
+                            grad_norms = []
+                            for param in self.model.parameters():
+                                if not param.grad is None:
+                                    grad_norms.append(param.grad.norm())
+                            grad_norms_per_timestep[self.args.inspect_backward_pass][h][i] = sum(grad_norms)/len(grad_norms)
+                            
+                            for param in self.model.parameters():
+                                if not param.grad is None:
+                                    param.grad.fill_(0)
+                        
+            if self.args.inspect_backward_pass is None:
+                print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+                train_loss = np.average(train_loss)
+                vali_loss = self.vali(vali_data, vali_loader, criterion)
+                test_loss = self.vali(test_data, test_loader, criterion)
+                
+                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                    epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+                early_stopping(test_loss, self.model, path)
+                if early_stopping.early_stop:
+                    print("Early stopping")
+                    break
+
+                adjust_learning_rate(model_optim, epoch + 1, self.args)
         
         self.model.to(torch.device('cpu'))
         best_model_path = path + '/' + 'checkpoint.pth'
@@ -280,12 +381,12 @@ class Exp_Main(Exp_Basic):
             self.args.features = 'M'
             _, test_loader = self._get_data(flag="test")
             self.args.features = "SM"
-
+        
+        epoch_time = time.time()
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_cycle) in enumerate(test_loader):
                 print ('batch %d/%d' % (i, len(test_loader)), end='\r')
-                exit()
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
 
@@ -296,6 +397,7 @@ class Exp_Main(Exp_Basic):
                 dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
                 dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
                 # encoder - decoder
+                
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
                         if self.args.output_attention:
@@ -303,27 +405,39 @@ class Exp_Main(Exp_Basic):
                                 outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark)[0] \
                                                 for idx in range(batch_x.shape[-1])], dim=-1)
                             else:
-                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                                if self.args.model != "CycleNet":
+                                    outputs = self.model(batch_x, batch_cycle)
+                                else:
+                                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                         else:
                             if self.args.features == "SM":
                                 outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark) \
                                                 for idx in range(batch_x.shape[-1])], dim=-1)
                             else:
-                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                                if self.args.model != "CycleNet":
+                                    outputs = self.model(batch_x, batch_cycle)
+                                else:
+                                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 else:
                     if self.args.output_attention:
                         if self.args.features == "SM":
                             outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark)[0] \
                                                     for idx in range(batch_x.shape[-1])], dim=-1)
                         else:
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                            if self.args.model != "CycleNet":
+                                outputs = self.model(batch_x, batch_cycle)
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
 
                     else:
                         if self.args.features == "SM":
                             outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark) \
                                                     for idx in range(batch_x.shape[-1])], dim=-1)
                         else:
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                            if self.args.model != "CycleNet":
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                            else:
+                                outputs = self.model(batch_x, batch_cycle)
 
                 batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
                 outputs = outputs.detach().cpu().numpy()
@@ -339,6 +453,15 @@ class Exp_Main(Exp_Basic):
                     gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
                     pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
                     visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
+            
+                if i==5 and self.args.gpu_memory_usage:
+                    from model_size import model_size
+                    print ("MEMORY: Model Size: %s: %fMB" % (self.args.model, model_size(self.model)))
+                    print ("MEMORY: GPU summary (in GB) after backward pass:")
+                    print ("allocated per data pt:", torch.cuda.memory_allocated(self.device)/(1024.*1024*1024*self.args.batch_size))
+                    print ("reserved per data pt:", torch.cuda.memory_reserved(self.device)/(1024.*1024*1024*self.args.batch_size))
+                    print ("Time per epoch: %f seconds" % ((time.time()-epoch_time)*len(test_loader)/(6.)))
+                    exit()               
 
         preds = np.array(preds)
         trues = np.array(trues)

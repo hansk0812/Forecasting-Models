@@ -10,6 +10,12 @@ from exp.exp_main import Exp_Main
 import random
 import numpy as np
 
+def remove_param(setting, param_shorthand):
+    
+    setting_split = setting.split(param_shorthand)
+    setting = setting_split[0] + '_'.join(setting_split[1].split('_')[1:])
+
+    return setting
 
 def main():
     fix_seed = 2021
@@ -96,9 +102,13 @@ def main():
     parser.add_argument('--devices', type=str, default='0,1', help='device ids of multi gpus')
     
     parser.add_argument('--load_from_chkpt', default=None, help="Path to pretrained model to resume training from")
+    parser.add_argument('--gpu_memory_usage', action="store_true", help="If True, prints GPU memory usage summary and exits")
+    parser.add_argument('--inspect_backward_pass', default=None, help="Uses 0-masked loss [forward, backward] to inspect gradients by horizon")
 
     parser.add_argument('--model_params_json', default=None, help="Path to JSON file with model hyperparameters and model zoo dir if available")
-    parser.add_argument('--patches_size', default=0, type=int, help="Divide H into H/patches_size models")
+    parser.add_argument('--patches_size', default=None, type=int, help="Divide H into H/patches_size models")
+    parser.add_argument('--self_supervised_patches', type=str, default=None, help="""Add self-supervision to patches-based splitting of models:
+                            [io, io_interp]""")
     
     parser.add_argument('--start', default=1, type=float, help="AR SS arange param1")
     parser.add_argument('--step', default=1, type=float, help="AR SS arange param2")
@@ -111,7 +121,7 @@ def main():
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
 
     if args.use_gpu and args.use_multi_gpu:
-        args.dvices = args.devices.replace(' ', '')
+        args.devices = args.devices.replace(' ', '')
         device_ids = args.devices.split(',')
         args.device_ids = [int(id_) for id_ in device_ids]
         args.gpu = args.device_ids[0]
@@ -129,9 +139,11 @@ def main():
         model_params = params["models"][json_ft][single_model][str(args.pred_len)]
         
         try:
+            print (os.path.join(params["zoo_path"], single_model, args.features, 
+                                    "*sl%d_*pl%d*" % (model_params["seq_len"], model_params["pred_len"])))
             chkpt_path = glob.glob(os.path.join(params["zoo_path"], single_model, args.features, 
                                     "*sl%d_*pl%d*" % (model_params["seq_len"], model_params["pred_len"])))[0]
-        
+
             if os.path.isdir(chkpt_path):
                 chkpt_path = os.path.join(chkpt_path, "checkpoint.pth")
             
@@ -160,7 +172,7 @@ def main():
     if args.is_training:
         for ii in range(args.itr):
             # setting record of experiments
-            setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_eb{}_dt{}_{}_{}'.format(
+            setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_ss{}_eb{}_dt{}_{}_{}'.format(
                 args.task_id,
                 args.model,
                 args.mode_select,
@@ -177,10 +189,15 @@ def main():
                 args.d_ff,
                 args.factor,
                 args.patches_size,
+                args.self_supervised_patches,
                 args.embed,
                 args.distil,
                 args.des,
                 ii)
+            if args.patches_size == 0:
+                setting = remove_param(setting, "pt")
+            if args.self_supervised_patches is None:
+                setting = remove_param(setting, "ss")
 
             exp = Exp(args)  # set experiments
             print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
@@ -196,7 +213,7 @@ def main():
             torch.cuda.empty_cache()
     else:
         ii = 0
-        setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_eb{}_dt{}_{}_{}'.format(
+        setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_ss{}_eb{}_dt{}_{}_{}'.format(
                 args.task_id,
                 args.model,
                 args.mode_select,
@@ -212,23 +229,30 @@ def main():
                 args.d_layers,
                 args.d_ff,
                 args.factor,
-                args.patches_len,
+                args.patches_size,
+                args.self_supervised_patches,
                 args.embed,
                 args.distil,
                 args.des,
                 ii)
-        
+        if args.patches_size == 0:
+            setting = remove_param(setting, "pt")
+        if not args.self_supervised_patches:
+            setting = remove_param(setting, "ss")
+
         if not args.model_params_json is None:
             chkpt_symlink = os.path.join("checkpoints", setting, "checkpoint.pth")
             if not os.path.exists(os.path.dirname(chkpt_symlink)):
                 os.makedirs(os.path.dirname(chkpt_symlink))
 
             if not args.load_from_chkpt is None and not os.path.islink(chkpt_symlink):
-                os.symlink(args.load_from_chkpt, chkpt_symlink)
+                if not os.path.exists(chkpt_symlink):
+                    os.symlink(args.load_from_chkpt, chkpt_symlink)
 
         exp = Exp(args)  # set experiments
         print ('test > mse:', args.model, args.pred_len, 'horizon size')
         print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+
         exp.test(setting, test=1)
         torch.cuda.empty_cache()
 

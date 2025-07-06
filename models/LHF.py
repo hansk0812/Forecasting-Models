@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,6 +18,8 @@ from . import Pyraformer, Triformer
 from . import xLSTM_TS
 from . import NLinearLHF
 
+from utils.interp import interp1d
+
 import gc
 
 from model_size import model_size
@@ -34,6 +37,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         
         self.patches_size = configs.patches_size
+        self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
         self.label_len = configs.label_len
         self.output_attention = configs.output_attention
@@ -42,7 +46,12 @@ class Model(nn.Module):
 
         assert configs.pred_len % configs.patches_size == 0, "GUI assertion!"
         patch_model_configs.pred_len = configs.patches_size
-
+        
+        # Reduce network size to prevent overfitting on smaller horizon
+        #configs.d_ff = configs.d_ff // 2
+        #configs.d_model = math.floor(configs.d_model / 2)
+        #configs.n_heads = configs.n_heads // 2
+    
         self.networks = nn.ModuleList([self._build_model(patch_model_configs) for _ in range(self.pred_len//self.patches_size)])
         
         if not configs.load_from_chkpt is None:
@@ -67,7 +76,9 @@ class Model(nn.Module):
                 except Exception:
                     traceback.print_exc()
                     print ("Cannot load checkpoint from file!")
-    
+        
+        self.self_supervision = configs.self_supervised_patches
+
     def _build_model(self, args):
         model_dict = {
             'FEDformer': FEDformer,
@@ -123,6 +134,21 @@ class Model(nn.Module):
 
         out_final, attns_final = [], []
         for idx in range(len(self.networks)):
+            
+            if not self.self_supervision is None and "io" in self.self_supervision:
+                if idx > 0:
+                    x_append = torch.cat((x_enc, out[:,-self.pred_len:,:]), dim=1)
+                    if self.self_supervision == "io":
+                        x_enc = x_append[:,self.pred_len:,:]
+                    else: # io_interp
+                        B = x_append.shape[0]
+                        x_append = x_append.transpose(1, 2).view((-1, self.pred_len+self.seq_len))
+                        x_enc = interp1d(torch.arange(0, self.pred_len+self.seq_len, 1),
+                                         x_append,
+                                         torch.arange(0, self.pred_len+self.seq_len, (self.seq_len+self.pred_len)/self.seq_len))
+                                         
+                    x_dec_patch[idx] = torch.cat((out[:,-self.label_len:,:], x_dec_patch[idx][:,self.label_len:,:]), dim=1)
+
             if self.output_attention:
                 out, attns = self.networks[idx](x_enc, x_mark_enc, x_dec_patch[idx], x_mark_dec_patch[idx],
                                                 enc_self_mask, dec_self_mask, dec_enc_mask)
@@ -187,7 +213,9 @@ if __name__ == '__main__':
         patch_sizes = (2,3,4)
     
         load_from_chkpt = None
-    
+           
+        self_supervised_patches = None
+        
     kwargs = {}
     kwargs["Autoformer"] = {"factor": 1, "d_model": 256}
     kwargs["Triformer"] = {"detail_freq": "(2,3,4)", "factor": 24}
@@ -207,7 +235,7 @@ if __name__ == '__main__':
 
     for model_name in ['FEDformer', 'Autoformer', 'Informer', 'Triformer', 
                         'FiLM', 'DLinear', 'NLinear', 'NBEATS', 'NHITS', 
-                        'NLinearLHF', 'TiDE', 'xLSTM_TS']:
+                        'NLinearLHF', 'TiDE', 'xLSTM_TS'][4:5]:
         
         print (model_name)
            
@@ -216,11 +244,10 @@ if __name__ == '__main__':
             configs.__dict__.update(kwargs[model_name])
         
         configs.model = model_name
-        configs.load_from_chkpt = "../LHF-Model-Zoo-ETTm2/FEDformer/M/ETTm2_FEDformer_random_modes64_ETTm2_ftM_sl720_ll360_pl720_dm512_nh8_el1_dl1_df2048_fc22_ebtimeF_dtTrue_Exp_0.pth"
         
         import os, sys
         save_stdout = sys.stdout
-        sys.stdout = open('trash', 'w')
+        #sys.stdout = open('trash', 'w')
         
         model = Model(configs).to(device)
 
@@ -235,7 +262,7 @@ if __name__ == '__main__':
         out = model.forward(enc, enc_mark, dec, dec_mark)
         
         sys.stdout = save_stdout
-        os.remove('trash')
+        #os.remove('trash')
 
         print(out.shape)
         print ("Model size:", model_size(model), "MB")
