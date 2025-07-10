@@ -29,6 +29,8 @@ from utils.metrics import metric
 import matplotlib.pyplot as plt
 import numpy as np; np.random.seed(1)
 
+from scipy.signal import correlate
+
 warnings.filterwarnings('ignore')
 
 class BackwardPassInspectLoss(nn.Module):
@@ -41,9 +43,9 @@ class BackwardPassInspectLoss(nn.Module):
 
         self.mask = torch.ones(horizon).to(device)
         if cutoff_type == "forward":
-            self.mask[cutoff:] = 0
+            self.mask[cutoff:] = 0 # pytorch automatically ignores indices outside the range of the tensor's shape!
         else:
-            self.mask[:cutoff] = 0
+            self.mask[:cutoff] = 0 # edge cases were a waste of time!
 
         if loss.lower() == "mse":
             self.loss_fn = self.MSE_per_timestep
@@ -221,9 +223,11 @@ class Exp_Main(Exp_Basic):
         if not self.args.inspect_backward_pass is None:
 
             grad_norms_per_timestep = {"forward": [torch.zeros(len(train_loader)) \
-                                                        for _ in range(self.args.pred_len)],
+                                                        for _ in range(self.args.pred_len+1)],
                                        "backward": [torch.zeros(len(train_loader)) \
-                                                        for _ in range(self.args.pred_len)]}
+                                                        for _ in range(self.args.pred_len+1)]}
+        elif not self.args.calculate_acf is None:
+            autocorrs = []
 
         for epoch in range(self.args.train_epochs):
             iter_count = 0
@@ -295,22 +299,32 @@ class Exp_Main(Exp_Basic):
                     scaler.scale(loss).backward()
                     scaler.step(model_optim)
                     scaler.update()
+                elif not self.args.calculate_acf is None:
+                    if epoch > 0:
+                        print ("Autocorrelation for %s:" % self.args.model, np.array(autocorrs).mean(axis=0))
+                        exit()
+                    
+                    for b in range(batch_y.shape[0]):
+                        for f in range(batch_y.shape[2]):
+                            autocorrs.append(correlate(batch_y[b,:,f].detach().cpu().numpy(), batch_y[b,:,f].detach().cpu().numpy(), method="fft"))
+                    continue
+
                 else:
                     if self.args.inspect_backward_pass is None:
                         loss.backward()
                         model_optim.step()
                     else:
                         if epoch > 0:
-                            for idx in range(self.args.pred_len):
-                                if self.args.inspect_backward_pass == "backward":
-                                    print ("Grad norm for H: %d->%d: %.5f" % (idx+1, self.args.pred_len, 
+                            for idx in range(self.args.pred_len+1):
+                                if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
+                                    print ("Grad norm for H: %d->%d: %.5f" % (idx, self.args.pred_len,
                                                                                 grad_norms_per_timestep["backward"][idx].mean()))
                                 else:
-                                    print ("Grad norm for H: %d->%d: %.5f" % (1, idx+1, 
+                                    print ("Grad norm for H: %d->%d: %.5f" % (1, idx,
                                                                                 grad_norms_per_timestep["forward"][idx].mean()))
                             exit()
 
-                        for h in range(self.args.pred_len):
+                        for h in range(self.args.pred_len+1):
                             criterion = self._select_criterion(backward_pass_inspect_cutoff=h, 
                                             inspect_type=self.args.inspect_backward_pass, horizon=self.args.pred_len)
                             loss = criterion(outputs, batch_y)
@@ -319,11 +333,17 @@ class Exp_Main(Exp_Basic):
                             for param in self.model.parameters():
                                 if not param.grad is None:
                                     grad_norms.append(param.grad.norm())
-                            grad_norms_per_timestep[self.args.inspect_backward_pass][h][i] = sum(grad_norms)/len(grad_norms)
+                                
+                                print ("Batch %d/%d: Horizon Index %d/%d: Gradients!" % (i, len(train_loader), h, self.args.pred_len), end='\r')
+
+                            grad_norms_per_timestep[self.args.inspect_backward_pass][h][i] = \
+                                    sum(grad_norms[:-1])/(len(grad_norms)-1) if self.args.inspect_backward_pass == "backward" \
+                                    else sum(grad_norms[1:])/(len(grad_norms)-1)
                             
                             for param in self.model.parameters():
                                 if not param.grad is None:
                                     param.grad.fill_(0)
+                        loss.backward(retain_graph=False)
                         
             if self.args.inspect_backward_pass is None:
                 print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
@@ -463,11 +483,8 @@ class Exp_Main(Exp_Basic):
                     print ("Time per epoch: %f seconds" % ((time.time()-epoch_time)*len(test_loader)/(6.)))
                     exit()               
 
-        preds = np.array(preds)
-        trues = np.array(trues)
-        print('test shape:', preds.shape, trues.shape)
-        preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
-        trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
+        preds = np.concatenate(preds, axis=0)
+        trues = np.concatenate(trues, axis=0)
         print('test shape:', preds.shape, trues.shape)
 
         # result save

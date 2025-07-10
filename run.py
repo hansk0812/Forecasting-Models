@@ -104,6 +104,7 @@ def main():
     parser.add_argument('--load_from_chkpt', default=None, help="Path to pretrained model to resume training from")
     parser.add_argument('--gpu_memory_usage', action="store_true", help="If True, prints GPU memory usage summary and exits")
     parser.add_argument('--inspect_backward_pass', default=None, help="Uses 0-masked loss [forward, backward] to inspect gradients by horizon")
+    parser.add_argument('--calculate_acf', default=None, type=int, help="Uses a lag of value specified as argument for ACF")
 
     parser.add_argument('--model_params_json', default=None, help="Path to JSON file with model hyperparameters and model zoo dir if available")
     parser.add_argument('--patches_size', default=None, type=int, help="Divide H into H/patches_size models")
@@ -194,7 +195,7 @@ def main():
                 args.distil,
                 args.des,
                 ii)
-            if args.patches_size == 0:
+            if args.patches_size == 0 or args.patches_size is None:
                 setting = remove_param(setting, "pt")
             if args.self_supervised_patches is None:
                 setting = remove_param(setting, "ss")
