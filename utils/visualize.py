@@ -13,6 +13,13 @@ import numpy as np
 
 import random
 
+# https://www.github.com/hanskrupakar/COCO-Style-Dataset-Generator-GUI 
+# (Trapezoid formula based shoelace (Gauss') formula)
+def find_poly_area(coords):
+    # coords: np.array([[x_i,y_i],...])
+    x, y = coords[:,0], coords[:,1]
+    return (0.5*np.abs(np.dot(x,np.roll(y,1))-np.dot(y,np.roll(x,1))))/2 #shoelace algorithm
+
 if __name__ == "__main__":
     
     ap = argparse.ArgumentParser()
@@ -41,6 +48,8 @@ if __name__ == "__main__":
 
         types = ["forward", "backward"] if args.mode == "gradnorms" else [str(int(h/int(args.mode.split('=')[-1])))]
         for cutoff_type in types:
+
+            print ()
             
             fnames = sorted(glob.glob(os.path.join(args.folder, "*_%d_%s_%s.txt" % (
                 h, cutoff_type, args.mode.split('=')[0]))))
@@ -68,6 +77,12 @@ if __name__ == "__main__":
                     
                     p, = plt.plot(np.arange(0, len(values)), values, label=model, 
                                     color=plot_colors[idx])
+                    plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors[idx], linestyle='--')
+
+                    # calculate area
+                    pts = np.stack((np.arange(0, len(values)), values)).transpose()
+                    print ("%s %s area under gradnorms:" % (model, cutoff_type), find_poly_area(pts))
+
                     if len(midpts[model]) == 0:
                         midpts[model].append(np.array(values))
                     else:
