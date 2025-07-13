@@ -30,6 +30,7 @@ import matplotlib.pyplot as plt
 import numpy as np; np.random.seed(1)
 
 from scipy.signal import correlate
+from statsmodels.tsa.stattools import acf
 
 warnings.filterwarnings('ignore')
 
@@ -54,7 +55,7 @@ class BackwardPassInspectLoss(nn.Module):
 
     def MSE_per_timestep(self, x, y):
         # B, H, D
-        return torch.mean((x-y)**2, dim=(2))
+        return torch.mean((x-y)**2, dim=(0,2))
     
     def MAE_per_timestep(self, x, y):
         # B, H, D
@@ -294,25 +295,42 @@ class Exp_Main(Exp_Basic):
                     # print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
                     iter_count = 0
                     time_now = time.time()
-
+                
                 if self.args.use_amp:
                     scaler.scale(loss).backward()
                     scaler.step(model_optim)
                     scaler.update()
-                elif not self.args.calculate_acf is None:
-                    if epoch > 0:
-                        print ("Autocorrelation for %s:" % self.args.model, np.array(autocorrs).mean(axis=0))
-                        exit()
-                    
-                    for b in range(batch_y.shape[0]):
-                        for f in range(batch_y.shape[2]):
-                            autocorrs.append(correlate(batch_y[b,:,f].detach().cpu().numpy(), batch_y[b,:,f].detach().cpu().numpy(), method="fft"))
-                    continue
-
                 else:
-                    if self.args.inspect_backward_pass is None:
+                    if self.args.inspect_backward_pass is None and not self.args.calculate_acf:
                         loss.backward()
                         model_optim.step()
+                    elif not self.args.calculate_acf is None:
+                        if epoch > 0:
+                            #print ([len(x) for x in autocorrs])
+                            print ("Autocorrelation for %s pred:" % self.args.model, np.array(autocorrs)[:,:,1:2,:].mean(axis=(0,1,2)))
+                            print ("Autocorrelation for %s gt:" % self.args.model, np.array(autocorrs)[:,:,0:1,:].mean(axis=(0,1,2)))
+                            exit()
+                        
+                        for b in range(batch_y.shape[0]):
+                            feature_autocorrs = []
+                            for f in range(batch_y.shape[2]):
+                                #autocorrs.append([
+                                #    correlate(batch_y[b,:,f].detach().cpu().numpy(), batch_y[b,:,f].detach().cpu().numpy(), method="fft"),
+                                #    correlate(outputs[b,:,f].detach().cpu().numpy(), outputs[b,:,f].detach().cpu().numpy(), method="fft")])
+                                
+                                #autocorr_pred = acf(batch_y[b,:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
+                                #autocorr_gt = acf(outputs[b,:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
+                                autocorr_pred = acf(batch_y[b,:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
+                                autocorr_gt = acf(outputs[b,:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
+                                
+                                if not (np.any(np.isnan(autocorr_pred)) or np.any(np.isnan(autocorr_gt))):
+                                    feature_autocorrs.append([autocorr_pred, autocorr_gt])
+                                else:
+                                    break
+                                
+                                if f == batch_y.shape[2]-1:
+                                    autocorrs.append(feature_autocorrs)
+
                     else:
                         if epoch > 0:
                             for idx in range(self.args.pred_len+1):
@@ -345,7 +363,7 @@ class Exp_Main(Exp_Basic):
                                     param.grad.fill_(0)
                         loss.backward(retain_graph=False)
                         
-            if self.args.inspect_backward_pass is None:
+            if self.args.inspect_backward_pass is None and self.args.calculate_acf is None:
                 print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
                 train_loss = np.average(train_loss)
                 vali_loss = self.vali(vali_data, vali_loader, criterion)
