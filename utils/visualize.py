@@ -56,23 +56,28 @@ def find_poly_area(coords, h):
             poly_adds.append(1)
         polys.append(np.array(p))
     
-    for p in polys:
-        plt.plot(p)
-    plt.show()
-
-    positions = [0] + [p.shape[0] for p in polys[:-1]]
+    positions = [0] + [p.shape[0]-a for (p, a) in zip(polys[:-1], poly_adds[:-1])]
     for idx in range(1, len(positions)):
         positions[idx] = positions[idx-1]+positions[idx]
-
-    signs = [(p.shape[0]//2==0 and p[1][-1] < line_y[1]) or line_y[(positions[idx]-poly_adds[idx]+p.shape[0])//2] < p[p.shape[0]//2,1] \
-                for idx, p in enumerate(polys)]
     
+    #print (line_y, poly)
+    #if len(positions)>1:
+    #    print (positions[1], polys[1].shape[0]) # 65, 2
+    #print ('y index, poly index', [[positions[idx] + (-poly_adds[idx]+p.shape[0])//2, line_y, p.shape[0]//2, p] for idx, p in enumerate(polys)]) #p.shape[0]-1 maybe
+    signs = [(p.shape[0]//2==0 and p[1][-1] < line_y[1]) or line_y[min(len(line_y)-1, positions[idx] + (-poly_adds[idx]+p.shape[0])//2)] < p[p.shape[0]//2,1] \
+                for idx, p in enumerate(polys)]
+
     return_area = 0
     for p, sign in zip(polys, signs):
+        #print (sign)
+        #plt.plot(line_x, line_y)
+        #plt.plot(p[:,0], p[:,1])
         # coords: np.array([[x_i,y_i],...])
         x, y = p[:,0], p[:,1]
         return_area += (2*sign-1)*(0.5*np.abs(np.dot(x,np.roll(y,1))-np.dot(y,np.roll(x,1))))/2 #shoelace algorithm
-    
+
+    #print ()
+    #plt.show()
     return return_area
 
 if __name__ == "__main__":
@@ -94,6 +99,7 @@ if __name__ == "__main__":
     random.shuffle(plot_colors)
     
     for h in H:
+
         fnames_forward = sorted(glob.glob(os.path.join(args.folder, "*_%d_%s_%s.txt" % (
             h, "forward", args.mode))))
         fnames_backward = [x.replace("forward", "backward") for x in fnames_forward]
@@ -138,9 +144,9 @@ if __name__ == "__main__":
 
     for h_idx, h in enumerate(H):
 
-        if h != 720:
-            continue
-        
+        #if h < 720:
+        #    continue
+
         types = ["forward", "backward"] if args.mode == "gradnorms" else [str(int(h/int(args.mode.split('=')[-1])))]
         
         if "autocorr" in args.mode:
@@ -150,11 +156,11 @@ if __name__ == "__main__":
 
         for cutoff_type in types:
             
-            if cutoff_type == "forward":
-                continue
+            #if cutoff_type == "forward":
+            #    continue
 
             print ()
-            
+
             fnames = sorted(glob.glob(os.path.join(args.folder, "*_%d_%s_%s.txt" % (
                 h, cutoff_type, args.mode.split('=')[0]))))
             
