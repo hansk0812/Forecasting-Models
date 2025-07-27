@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from .pyraformer.Layers import EncoderLayer, Decoder, Predictor
 from .pyraformer.Layers import Bottleneck_Construct, Conv_Construct, MaxPooling_Construct, AvgPooling_Construct
-from .pyraformer.Layers import get_mask, get_subsequent_mask, refer_points, get_k_q, get_q_k
+from .pyraformer.Layers import get_mask, get_subsequent_mask, refer_points
 from .pyraformer.embed import DataEmbedding, CustomEmbedding
 
 
@@ -34,6 +34,12 @@ class Encoder(nn.Module):
         self.conv_layers = Bottleneck_Construct(configs.d_model, configs.detail_freq_list, configs.factor)
 
     def forward(self, x_enc, x_mark_enc):
+        
+        # self.enc_embedding: token conv, timefeature linear
+        # self.mask - gradient zeroes out mask OK
+        # self.conv_layers: linear, 3 parallel conv layers, linear, layernorm
+        # self.layers: all differentiable layers: Linear and matmul
+        # self.indexes: None, decoder type is not FC
 
         seq_enc = self.enc_embedding(x_enc, x_mark_enc)
 

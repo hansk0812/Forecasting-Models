@@ -37,7 +37,8 @@ warnings.filterwarnings('ignore')
 class BackwardPassInspectLoss(nn.Module):
 
     def __init__(self, horizon, cutoff, cutoff_type, device, loss="mae"):
-        # cutoff: For a given horizon, 0:cutoff are 1 and cutoff:horizon are 0
+        # cutoff_type=forward: For a given horizon, 0:cutoff are 1 and cutoff:horizon are 0
+        # cutoff_type=backward: For a given horizon, 0:cutoff are 0 and cutoff:horizon are 1
         
         super().__init__()
         assert cutoff <= horizon, "GUI Assertion!"
@@ -46,7 +47,7 @@ class BackwardPassInspectLoss(nn.Module):
         if cutoff_type == "forward":
             self.mask[cutoff:] = 0 # pytorch automatically ignores indices outside the range of the tensor's shape!
         else:
-            self.mask[:cutoff] = 0 # edge cases were a waste of time!
+            self.mask[:cutoff] = 0
 
         if loss.lower() == "mse":
             self.loss_fn = self.MSE_per_timestep
@@ -355,13 +356,13 @@ class Exp_Main(Exp_Basic):
                                 print ("Batch %d/%d: Horizon Index %d/%d: Gradients!" % (i, len(train_loader), h, self.args.pred_len), end='\r')
 
                             grad_norms_per_timestep[self.args.inspect_backward_pass][h][i] = \
-                                    sum(grad_norms[:-1])/(len(grad_norms)-1) if self.args.inspect_backward_pass == "backward" \
-                                    else sum(grad_norms[1:])/(len(grad_norms)-1)
+                                    sum(grad_norms)/(len(grad_norms)-1) if self.args.inspect_backward_pass == "backward" \
+                                    else sum(grad_norms)/(len(grad_norms)-1)
                             
                             for param in self.model.parameters():
                                 if not param.grad is None:
                                     param.grad.fill_(0)
-                        loss.backward(retain_graph=False)
+
                         
             if self.args.inspect_backward_pass is None and self.args.calculate_acf is None:
                 print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))

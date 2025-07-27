@@ -236,7 +236,7 @@ def main():
                 args.distil,
                 args.des,
                 ii)
-        if args.patches_size == 0:
+        if args.patches_size == 0 or args.patches_size is None:
             setting = remove_param(setting, "pt")
         if not args.self_supervised_patches:
             setting = remove_param(setting, "ss")

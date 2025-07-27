@@ -1,7 +1,6 @@
 from matplotlib import pyplot as plt
 from matplotlib.legend_handler import HandlerTuple
 from collections import OrderedDict
-import matplotlib.colors as mcolors
 
 import argparse
 
@@ -12,6 +11,9 @@ import re
 import numpy as np
 
 import random
+
+import warnings
+warnings.filterwarnings("ignore")
 
 # https://www.github.com/hanskrupakar/COCO-Style-Dataset-Generator-GUI 
 # (Trapezoid formula based shoelace (Gauss') formula)
@@ -53,7 +55,8 @@ def find_poly_area(coords, h):
         p = poly[intersection_pts[idx]:intersection_pts[idx+1]+1,:].tolist()
         if idx >= 1:
             start_pt = poly[intersection_pts[idx]][0].astype(np.int32)
-            p = [[line_x[start_pt], line_y[start_pt]]] + p + [[line_x[min(len(line_x)-1, intersection_pts[idx+1])], line_y[min(len(line_y)-1, intersection_pts[idx+1])]]]
+            p = [[line_x[start_pt], line_y[start_pt]]] + p + \
+                    [[line_x[min(len(line_x)-1, intersection_pts[idx+1])], line_y[min(len(line_y)-1, intersection_pts[idx+1])]]]
             poly_adds.append(2)
         else:
             if p[-1][1] != line_y[-1]: 
@@ -90,18 +93,23 @@ if __name__ == "__main__":
     ap.add_argument("mode", help="[gradnorms, autocorr=horizon/nlags]")
     ap.add_argument("folder", help="logs/gradnorms or logs/autocorr folder", default=None)
     ap.add_argument("--models", nargs='+', help="Models to include in visualization. Ignore for all available models.", default=None)
+    ap.add_argument("--start_color_idx", default=[0], nargs='+', help="Color idx for single color per model", type=int)
     args = ap.parse_args()
 
     assert args.mode == "gradnorms" or "autocorr" in args.mode
 
     H = [96, 192, 336, 720]
     
-    fig, ax = plt.subplots()
-
     plots = OrderedDict()
-    plot_colors = list(mcolors._colors_full_map.values())
-    random.shuffle(plot_colors)
     
+    # select a few colors
+    #import matplotlib.colors as mcolors
+    #plot_colors = list(mcolors._colors_full_map.values())
+    #random.shuffle(plot_colors)
+    
+    plot_colors = ["#56ae57", "#894585", "#a5a391", "#0c06f7", "#61de2a", "#ff0789", "#d3b683", "#430541", "#d0e429", "#fdb147", "#850e04", "#efc0fe", "#8fae22"]
+    plot_colors_per_model = np.array(plot_colors)[args.start_color_idx]
+
     for h in H:
 
         fnames_forward = sorted(glob.glob(os.path.join(args.folder, "*_%d_%s_%s.txt" % (
@@ -145,12 +153,14 @@ if __name__ == "__main__":
 
     # midpoints
     midpts, midpts_plot = {}, {}
-
+    areas = []
     for h_idx, h in enumerate(H):
 
         #if h < 720:
         #    continue
 
+        fig, ax = plt.subplots()
+    
         types = ["forward", "backward"] if args.mode == "gradnorms" else [str(int(h/int(args.mode.split('=')[-1])))]
         
         if "autocorr" in args.mode:
@@ -163,8 +173,6 @@ if __name__ == "__main__":
             #if cutoff_type == "forward":
             #    continue
 
-            print ()
-            
             fnames = sorted(glob.glob(os.path.join(args.folder, "*_%d_%s_%s.txt" % (
                 h, cutoff_type, args.mode.split('=')[0]))))
             
@@ -191,22 +199,22 @@ if __name__ == "__main__":
                             values.append(float(line.split(": ")[-1]))
                     
                     p, = plt.plot(np.arange(0, len(values)), values, label=model, 
-                                    color=plot_colors[idx])
-                    plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors[idx], linestyle='--')
+                                    color=plot_colors_per_model[idx])
+                    plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors_per_model[idx], linestyle='--')
                     
                     # calculate area
                     poly_areas[cutoff_type][model] = []
                     pts = np.stack((np.arange(0, len(values)), values)).transpose()
                     
                     for h_ in range(1, h+1):
-                        plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors[idx], linestyle='--')
-                        plt.plot(list(range(h_)), values[:h_], color=plot_colors[idx], linestyle='--')
+                        #plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors[idx], linestyle='--')
+                        #plt.plot(list(range(h_)), values[:h_], color=plot_colors[idx], linestyle='--')
                         poly_areas[cutoff_type][model].append(find_poly_area(pts, h_))
 
                     if len(midpts[model]) == 0:
                         midpts[model].append(np.array(values))
                     else:
-                        print (model)
+                        print ("Model: %s ; H = %d" % (model, h))
                         midpts[model] = np.argwhere(np.diff(np.sign(np.array(values)-midpts[model][0])))
                     plots[model].append(p)
                 
@@ -230,7 +238,7 @@ if __name__ == "__main__":
                                 flag = True
                     
                     try:
-                        plt.plot(list(range(len(autocorrs[0]))), autocorrs[0], label=model, color=plot_colors[idx+1])
+                        plt.plot(list(range(len(autocorrs[0]))), autocorrs[0], label=model, color=plot_colors_per_model[idx])
                         autocorrs_gt.append(autocorrs[1])
                     except Exception:
                         import traceback
@@ -243,16 +251,26 @@ if __name__ == "__main__":
                 plt.xlabel("H=%d lags" % h)
                 plt.ylabel("Autocorrelation")
                 plt.title("ACF averages of the self-attention-based models' test set forecasts and ground truth")
-                plt.savefig("plots/autocorrs_%d_%s.png" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
+                plt.savefig("plots/autocorrs_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
                 #plt.show()
                 plt.clf()
 
             if args.mode == "gradnorms":
                 plt.legend([tuple(plots[model]) for model in plots], list(plots.keys()),
-                                            handler_map={tuple: HandlerTuple(ndivide=None)})
+                                            handler_map={tuple: HandlerTuple(ndivide=None)}, loc='center right')
         if args.mode == "gradnorms":
-            plt.savefig("plots/gradnorms_%d_%s.png" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
-            #plt.show()
+            ax_top = ax.twiny()
+            ax_top.set_xlim(ax.get_xlim())
+            ax.set_xlabel("Forward [0->%d]" % h)
+            ax_top.set_xlabel("Backward [%d->0]" % h)
+            reverse_ticks = list(reversed(ax.get_xticklabels()))
+            extent = int(reverse_ticks[0]._x - reverse_ticks[1]._x)
+            for text_obj in reverse_ticks:
+                text_obj._text = str(int(text_obj._x) - extent + h % extent)
+            ax_top.set_xticklabels(reverse_ticks)
+
+            plt.savefig("plots/gradnorms_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
+            #plt.show(); exit()
         
             # midpoints: 96, 192, 336, 720
             for k in midpts:
@@ -265,22 +283,36 @@ if __name__ == "__main__":
                 midpts[k] = []
                 plots[k] = []
             
-            plt.clf()
-            
-            for idx, model in enumerate(poly_areas[cutoff_type].keys()):
-                plt.plot([0, len(poly_areas[cutoff_type][model])], [0, 0])
-                for cutoff_type in types:
-                    plt.plot(list(range(len(poly_areas[cutoff_type][model]))), 
-                            poly_areas[cutoff_type][model], label=model + "[%d->%d]" % (
-                                1 if cutoff_type=="forward" else len(poly_areas[cutoff_type][model]),
-                                len(poly_areas[cutoff_type][model]) if cutoff_type=="forward" else 1), 
-                            color=plot_colors[idx], 
-                            linestyle="dashed" if cutoff_type==types[1] else "dotted")
+            fig, ax = plt.subplots()
 
+            for idx, model in enumerate(poly_areas[cutoff_type].keys()):
+                plt.plot([0, len(poly_areas[cutoff_type][model])], [0, 0], color="black")
+                for cutoff_type in types:
+                    plt.plot(np.arange(0, len(poly_areas[cutoff_type][model])),
+                            poly_areas[cutoff_type][model], label=model + "[%d->%d]" % (
+                                0 if cutoff_type=="forward" else len(poly_areas[cutoff_type][model]),
+                                len(poly_areas[cutoff_type][model]) if cutoff_type=="forward" else 0), 
+                            color=plot_colors_per_model[idx],
+                            linestyle="dashed" if cutoff_type==types[1] else "dotted")
+    
             plt.legend()
-            plt.savefig("plots/gradnorms_%d_%s_areas.png" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
+            
+            ax_top = ax.twiny()
+            ax_top.set_xlim(ax.get_xlim())
+            ax.set_xlabel("Forward [0->%d] (dotted line)" % h)
+            ax_top.set_xlabel("Backward [%d->0] (dashed line)" % h)
+            reverse_ticks = list(reversed(ax.get_xticklabels()))
+            extent = int(reverse_ticks[0]._x - reverse_ticks[1]._x)
+            for text_obj in reverse_ticks:
+                text_obj._text = str(int(text_obj._x) - extent + h % extent)
+            ax_top.set_xticklabels(reverse_ticks)
+ 
+            plt.savefig("plots/gradnorms_%d_%s_areas.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
             #plt.show()
             plt.clf()
+
+            areas.append(poly_areas)
+        #areas.append(poly_areas)
 
     if args.mode != "gradnorms":
         exit()
@@ -289,7 +321,7 @@ if __name__ == "__main__":
 
     label_plots = []
     for idx, k in enumerate(midpts_plot):
-        p, = plt.plot(H, midpts_plot[k], label=k, marker='o', color=plot_colors[idx])
+        p, = plt.plot(H, midpts_plot[k], label=k, marker='o', color=plot_colors_per_model[idx])
         label_plots.append(p)
 
     for h in H:
@@ -299,10 +331,45 @@ if __name__ == "__main__":
     label_keys = list(midpts_plot.keys())
     label_keys.append("H/2 Line")
     plt.legend(label_plots, label_keys, handler_map={tuple: HandlerTuple(ndivide=None)})
-    plt.title("At horizon=y, the first y predictions' gradient updates' norms are the same as those of the last H-y!")
+    plt.title("Gradient equivariance points over the horizon")
     
     plt.xticks(H, ["H=%d" % H[idx] for idx in range(len(H))])
     
-    plt.savefig("plots/gradnorms_%d_%s_midpts.png" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
+    plt.savefig("plots/gradnorms_%d_%s_midpts.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
     #plt.show()
+    
+    fig, ax = plt.subplots()
+    plt.plot([0, 1], [0, 0], color="black")
 
+    # plot areas in a single 0-1 plot
+    for idx, (h, area_dict) in enumerate(zip(H, areas)):
+        maxs = {m: [] for m in area_dict["forward"].keys()}
+        for k in area_dict:
+            for m in area_dict[k]:
+                area_dict[k][m] = np.array(area_dict[k][m])
+                #mask = (area_dict[k][m]>0).astype(np.int32)
+                #area_plot = np.sqrt(area_dict[k][m]*mask)
+                #area_plot += -np.sqrt(-area_dict[k][m]*(1-mask))
+                #area_plot /= np.sqrt(float(h))
+                area_dict[k][m] = area_dict[k][m] / h
+                maxs[m].append(max(area_dict[k][m].max(), (-area_dict[k][m]).max()))
+        for k in area_dict:
+            for m in area_dict[k]:
+                l = "H: [%d->%d]" % (0 if k=="forward" else h, 0 if k=="backward" else h)
+                
+                plt.plot(np.arange(0, 1, 1/len(area_dict[k][m])), 
+                         area_dict[k][m]/max(maxs[m]), 
+                         label=l, 
+                         color=plot_colors[idx],
+                         linestyle="dashed" if k=="backward" else "dotted")
+            
+    ax_top = ax.twiny()
+    ax_top.set_xlim(ax.get_xlim())
+    ax.set_xlabel("Forward [0->%d]" % h)
+    ax_top.set_xlabel("Backward [%d->0]" % h)
+    reverse_ticks = list(reversed(ax.get_xticklabels()))
+    ax_top.set_xticklabels(reverse_ticks)
+   
+    plt.title('_'.join(args.models))
+    plt.legend(prop={"size": 6})
+    plt.savefig("plots/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=600)
