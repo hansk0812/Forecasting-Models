@@ -250,14 +250,14 @@ if __name__ == "__main__":
                 plt.legend()
                 plt.xlabel("H=%d lags" % h)
                 plt.ylabel("Autocorrelation")
-                plt.title("ACF averages of the self-attention-based models' test set forecasts and ground truth")
+                plt.title("Self attention models' ACF averages over the test set")
                 plt.savefig("plots/autocorrs_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
                 #plt.show()
                 plt.clf()
 
             if args.mode == "gradnorms":
                 plt.legend([tuple(plots[model]) for model in plots], list(plots.keys()),
-                                            handler_map={tuple: HandlerTuple(ndivide=None)}, loc='center right')
+                        handler_map={tuple: HandlerTuple(ndivide=None)}, loc='center right')
         if args.mode == "gradnorms":
             ax_top = ax.twiny()
             ax_top.set_xlim(ax.get_xlim())
@@ -265,10 +265,21 @@ if __name__ == "__main__":
             ax_top.set_xlabel("Backward [%d->0]" % h)
             reverse_ticks = list(reversed(ax.get_xticklabels()))
             extent = int(reverse_ticks[0]._x - reverse_ticks[1]._x)
-            for text_obj in reverse_ticks:
-                text_obj._text = str(int(text_obj._x) - extent + h % extent)
+            
+            if extent == 0:
+                continue
+            
+            start_idx = 0
+            while reverse_ticks[start_idx]._x > h:
+                start_idx += 1
+            if start_idx > 1:
+                start_idx -= 1
+            reverse_ticks[start_idx]._text = str(h)
+            reverse_ticks[start_idx]._x = h
+            for idx, text_obj in enumerate(reverse_ticks[start_idx + 1:]):
+                text_obj._text = str(int(reverse_ticks[start_idx + idx]._x)-extent)
+                text_obj._x = int(text_obj._text)
             ax_top.set_xticklabels(reverse_ticks)
-
             plt.savefig("plots/gradnorms_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
             #plt.show(); exit()
         
@@ -303,8 +314,14 @@ if __name__ == "__main__":
             ax_top.set_xlabel("Backward [%d->0] (dashed line)" % h)
             reverse_ticks = list(reversed(ax.get_xticklabels()))
             extent = int(reverse_ticks[0]._x - reverse_ticks[1]._x)
-            for text_obj in reverse_ticks:
-                text_obj._text = str(int(text_obj._x) - extent + h % extent)
+            start_idx = 0
+            while reverse_ticks[start_idx]._x > h:
+                start_idx += 1
+            reverse_ticks[start_idx]._text = str(h)
+            reverse_ticks[start_idx]._x = h
+            for idx, text_obj in enumerate(reverse_ticks[start_idx + 1:]):
+                text_obj._text = str(int(reverse_ticks[start_idx + idx]._x)-extent)
+                text_obj._x = int(text_obj._text)
             ax_top.set_xticklabels(reverse_ticks)
  
             plt.savefig("plots/gradnorms_%d_%s_areas.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
