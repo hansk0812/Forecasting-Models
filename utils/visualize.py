@@ -98,7 +98,8 @@ if __name__ == "__main__":
 
     assert args.mode == "gradnorms" or "autocorr" in args.mode
 
-    H = [96, 192, 336, 720]
+    #H = [96, 192, 336, 720]
+    H = [95, 192, 336, 720]
     
     plots = OrderedDict()
     
@@ -107,7 +108,7 @@ if __name__ == "__main__":
     #plot_colors = list(mcolors._colors_full_map.values())
     #random.shuffle(plot_colors)
     
-    plot_colors = ["#56ae57", "#894585", "#a5a391", "#0c06f7", "#61de2a", "#ff0789", "#d3b683", "#430541", "#d0e429", "#fdb147", "#850e04", "#efc0fe", "#8fae22"]
+    plot_colors = ["#56ae57", "#894585", "#a5a391", "#0c06f7", "#61de2a", "#ff0789", "#d3b683", "#430541", "#d0e429", "#fdb147", "#850e04", "#efc0fe", "#8fae22", "goldenrod"]
     plot_colors_per_model = np.array(plot_colors)[args.start_color_idx]
 
     for h in H:
@@ -143,9 +144,6 @@ if __name__ == "__main__":
                 print ("Missing file:", f_f, f_b)
                 continue
 
-            lines_f.append(lines_b[0])
-            lines_b.append(lines_f[0])
-            
             with open(f_f, 'w') as f:
                 f.writelines(lines_f)
             with open(f_b, 'w') as f:
@@ -194,6 +192,8 @@ if __name__ == "__main__":
                     with open(fname, 'r') as f:
                         values = []
                         for line in f.readlines():
+                            if model.lower() == "spacetime" and "Gra " in line:
+                                first_pt = float(line.split(": ")[-1])
                             if not "Grad " in line:
                                 continue
                             values.append(float(line.split(": ")[-1]))
@@ -201,6 +201,9 @@ if __name__ == "__main__":
                     p, = plt.plot(np.arange(0, len(values)), values, label=model, 
                                     color=plot_colors_per_model[idx])
                     plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors_per_model[idx], linestyle='--')
+
+                    if model.lower() == "spacetime":
+                        plt.plot(0, first_pt, marker='o', color=plot_colors_per_model[idx])
                     
                     # calculate area
                     poly_areas[cutoff_type][model] = []
@@ -251,7 +254,7 @@ if __name__ == "__main__":
                 plt.xlabel("H=%d lags" % h)
                 plt.ylabel("Autocorrelation")
                 plt.title("Self attention models' ACF averages over the test set")
-                plt.savefig("plots/autocorrs_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
+                plt.savefig("plots/autocorrs_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600, bbox_inches="tight")
                 #plt.show()
                 plt.clf()
 
@@ -280,7 +283,7 @@ if __name__ == "__main__":
                 text_obj._text = str(int(reverse_ticks[start_idx + idx]._x)-extent)
                 text_obj._x = int(text_obj._text)
             ax_top.set_xticklabels(reverse_ticks)
-            plt.savefig("plots/gradnorms_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
+            plt.savefig("plots/gradnorms_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600, bbox_inches="tight")
             #plt.show(); exit()
         
             # midpoints: 96, 192, 336, 720
@@ -324,7 +327,7 @@ if __name__ == "__main__":
                 text_obj._x = int(text_obj._text)
             ax_top.set_xticklabels(reverse_ticks)
  
-            plt.savefig("plots/gradnorms_%d_%s_areas.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
+            plt.savefig("plots/gradnorms_%d_%s_areas.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600, bbox_inches="tight")
             #plt.show()
             plt.clf()
 
@@ -352,7 +355,7 @@ if __name__ == "__main__":
     
     plt.xticks(H, ["H=%d" % H[idx] for idx in range(len(H))])
     
-    plt.savefig("plots/gradnorms_%d_%s_midpts.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600)
+    plt.savefig("plots/gradnorms_%d_%s_midpts.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600, bbox_inches="tight")
     #plt.show()
     
     fig, ax = plt.subplots()
@@ -372,7 +375,7 @@ if __name__ == "__main__":
                 maxs[m].append(max(area_dict[k][m].max(), (-area_dict[k][m]).max()))
         for k in area_dict:
             for m in area_dict[k]:
-                l = "H: [%d->%d]" % (0 if k=="forward" else h, 0 if k=="backward" else h)
+                l = "H=%d: [%s->%s]" % (h, "0" if k=="forward" else "H", "0" if k=="backward" else "H")
                 
                 plt.plot(np.arange(0, 1, 1/len(area_dict[k][m])), 
                          area_dict[k][m]/max(maxs[m]), 
@@ -380,6 +383,7 @@ if __name__ == "__main__":
                          color=plot_colors[idx],
                          linestyle="dashed" if k=="backward" else "dotted")
             
+    plt.legend(prop={"size": 6})
     ax_top = ax.twiny()
     ax_top.set_xlim(ax.get_xlim())
     ax.set_xlabel("Forward [0->%d]" % h)
@@ -388,5 +392,4 @@ if __name__ == "__main__":
     ax_top.set_xticklabels(reverse_ticks)
    
     plt.title('_'.join(args.models))
-    plt.legend(prop={"size": 6})
-    plt.savefig("plots/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=600)
+    plt.savefig("plots/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=600, bbox_inches="tight")

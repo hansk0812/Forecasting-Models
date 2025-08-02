@@ -157,17 +157,18 @@
                 }
             },
             "Triformer": {
+                "Comment": "Ignoring trained model configs because 4 models don't fit on a GPU with them",
                 "96": {
                     "features": "M",
                     "seq_len": 96,
                     "label_len": 48,
                     "pred_len": 96,
-                    "d_model": 400,
-                    "n_heads": 8,
+                    "d_model": 96,
+                    "n_heads": 4,
                     "e_layers": 1,
                     "d_layers": 1,
                     "d_ff": 2048,
-                    "factor": 128,
+                    "factor": 192,
                     "detail_freq": "(4,4,4)"
                 },
                 "192": {
@@ -175,12 +176,12 @@
                     "seq_len": 192,
                     "label_len": 48,
                     "pred_len": 192,
-                    "d_model": 400,
-                    "n_heads": 8,
+                    "d_model": 128,
+                    "n_heads": 4,
                     "e_layers": 1,
                     "d_layers": 1,
                     "d_ff": 2048,
-                    "factor": 128,
+                    "factor": 192,
                     "detail_freq": "(4,4,4)"
                 },
                 "336": {
@@ -188,12 +189,12 @@
                     "seq_len": 336,
                     "label_len": 48,
                     "pred_len": 336,
-                    "d_model": 400,
-                    "n_heads": 8,
+                    "d_model": 192,
+                    "n_heads": 4,
                     "e_layers": 1,
                     "d_layers": 1,
                     "d_ff": 2048,
-                    "factor": 128,
+                    "factor": 192,
                     "detail_freq": "(4,4,4)"
                 },
                 "720": {
@@ -201,12 +202,12 @@
                     "seq_len": 720,
                     "label_len": 48,
                     "pred_len": 720,
-                    "d_model": 400,
-                    "n_heads": 8,
+                    "d_model": 256,
+                    "n_heads": 4,
                     "e_layers": 1,
                     "d_layers": 1,
                     "d_ff": 2048,
-                    "factor": 128,
+                    "factor": 192,
                     "detail_freq": "(4,4,4)"
                 }
             },
@@ -587,14 +588,14 @@
                     "label_len": 0,
                     "pred_len": 96,
                     "d_model": 64,
-                    "n_heads": 4,
+                    "n_heads": 8,
                     "e_layers": 4,
                     "d_layers": 2,
                     "enc_in": 7,
                     "dec_in": 7,
                     "d_ff": 512,
-                    "factor": 64,
-                    "detail_freq": "(5,5,5)"
+                    "factor": 32,
+                    "detail_freq": "(3,3,3)"
                 },
                 "192": {
                     "features": "M",

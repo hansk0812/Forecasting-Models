@@ -353,7 +353,7 @@ class Exp_Main(Exp_Basic):
                                 if not param.grad is None:
                                     grad_norms.append(param.grad.norm())
                                 
-                                print ("Batch %d/%d: Horizon Index %d/%d: Gradients!" % (i, len(train_loader), h, self.args.pred_len), end='\r')
+                                #print ("Batch %d/%d: Horizon Index %d/%d: Gradients!" % (i, len(train_loader), h, self.args.pred_len), end='\r')
 
                             grad_norms_per_timestep[self.args.inspect_backward_pass][h][i] = \
                                     sum(grad_norms)/(len(grad_norms)-1) if self.args.inspect_backward_pass == "backward" \
@@ -410,6 +410,9 @@ class Exp_Main(Exp_Basic):
             self.model.load_state_dict(state_dict)
             print ('loaded model')
 
+        if not self.args.calculate_acf is None:
+            autocorrs = []
+        
         preds = []
         trues = []
         folder_path = './test_results/' + setting + '/'
@@ -478,6 +481,21 @@ class Exp_Main(Exp_Basic):
                             else:
                                 outputs = self.model(batch_x, batch_cycle)
 
+                if not self.args.calculate_acf is None:
+                    for b in range(batch_y.shape[0]):
+                        feature_autocorrs = []
+                        for f in range(batch_y.shape[2]):
+                            autocorr_pred = acf(outputs[b,:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
+                            autocorr_gt = acf(batch_y[b,-self.args.pred_len:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
+                            
+                            if not (np.any(np.isnan(autocorr_pred)) or np.any(np.isnan(autocorr_gt))):
+                                feature_autocorrs.append([autocorr_pred, autocorr_gt])
+                            else:
+                                break
+                            
+                            if f == batch_y.shape[2]-1:
+                                autocorrs.append(feature_autocorrs)
+
                 batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
                 outputs = outputs.detach().cpu().numpy()
                 batch_y = batch_y.detach().cpu().numpy()
@@ -501,7 +519,12 @@ class Exp_Main(Exp_Basic):
                     print ("reserved per data pt:", torch.cuda.memory_reserved(self.device)/(1024.*1024*1024*self.args.batch_size))
                     print ("Time per epoch: %f seconds" % ((time.time()-epoch_time)*len(test_loader)/(6.)))
                     exit()               
-
+                        
+            if not self.args.calculate_acf is None:
+                print ("Autocorrelation for %s pred:" % self.args.model, np.array(autocorrs)[:,:,0:1,:].mean(axis=(0,1,2)))
+                print ("Autocorrelation for %s gt:" % self.args.model, np.array(autocorrs)[:,:,1:2,:].mean(axis=(0,1,2)))
+                exit()
+ 
         preds = np.concatenate(preds, axis=0)
         trues = np.concatenate(trues, axis=0)
         print('test shape:', preds.shape, trues.shape)
