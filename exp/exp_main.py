@@ -112,6 +112,7 @@ class Exp_Main(Exp_Basic):
                     print ("xLSTM import complete with changes to package!")
 
             except Exception:
+                print ("sed ERROR!")
                 import traceback
                 traceback.print_exc()
                 pass
@@ -362,7 +363,12 @@ class Exp_Main(Exp_Basic):
                             for param in self.model.parameters():
                                 if not param.grad is None:
                                     param.grad.fill_(0)
-
+                        
+                        loss.backward(retain_graph=False)
+                        # No zero_grad between batches with detach()
+                        for param in self.model.parameters():
+                            if not param.grad is None:
+                                param.grad.detach()
                         
             if self.args.inspect_backward_pass is None and self.args.calculate_acf is None:
                 print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
@@ -617,3 +623,25 @@ class Exp_Main(Exp_Basic):
         np.save(folder_path + 'real_prediction.npy', preds)
 
         return
+
+# Train diffusion models
+def log_normal(x, mu, var):
+    """Logarithm of normal distribution with mean=mu and variance=var
+       log(x|μ, σ^2) = loss = -0.5 * Σ log(2π) + log(σ^2) + ((x - μ)/σ)^2
+
+    Args:
+       x: (array) corresponding array containing the input
+       mu: (array) corresponding array containing the mean
+       var: (array) corresponding array containing the variance
+
+    Returns:
+       output: (array/float) depending on average parameters the result will be the mean
+                            of all the sample losses or an array with the losses per sample
+    """
+    eps = 1e-8
+    if eps > 0.0:
+        var = var + eps
+    # return -0.5 * torch.sum(
+    #     np.log(2.0 * np.pi) + torch.log(var) + torch.pow(x - mu, 2) / var)
+    return 0.5 * torch.mean(
+        np.log(2.0 * np.pi) + torch.log(var) + torch.pow(x - mu, 2) / var)
