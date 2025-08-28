@@ -15,6 +15,7 @@ from models import FEDformer, Autoformer, Informer, Transformer
 from models import DLinear, NLinear, NHITS, TiDE, NBEATS, FiLM
 from models import Pyraformer, Triformer
 from models import xLSTM_TS
+from models import SpaceTime
 
 from models import SAMformer
 from models import CycleNet
@@ -31,6 +32,8 @@ import numpy as np; np.random.seed(1)
 
 from scipy.signal import correlate
 from statsmodels.tsa.stattools import acf
+
+from tqdm import tqdm
 
 warnings.filterwarnings('ignore')
 
@@ -92,7 +95,8 @@ class Exp_Main(Exp_Basic):
                 'NBEATS': NBEATS,
                 'Pyraformer': Pyraformer,
                 'SAMformer': SAMformer,
-                'CycleNet': CycleNet
+                'CycleNet': CycleNet,
+                'SpaceTime': SpaceTime
             }
             try:
                 model_dict['xLSTM_TS'] = xLSTM_TS
@@ -118,7 +122,8 @@ class Exp_Main(Exp_Basic):
                 pass
 
             model = model_dict[self.args.model].Model(self.args).float()
-           
+            
+            torch.save(model.state_dict(), "spacetime.pth")
         
         if not self.args.load_from_chkpt is None:
             if "LHF/" in self.args.model:
@@ -165,32 +170,37 @@ class Exp_Main(Exp_Basic):
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_cycle) in enumerate(vali_loader):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float()
+                
+                if not self.args.model == "SpaceTime":
+                    batch_x_mark = batch_x_mark.float().to(self.device)
+                    batch_y_mark = batch_y_mark.float().to(self.device)
 
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
-
-                # decoder input
-                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                    # decoder input
+                    dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+                    dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
                         
-                        if self.args.model != "CycleNet":
+                        if self.args.model == "CycleNet":
+                            outputs = self.model(batch_x, batch_cycle)
+                        elif self.args.model == "SpaceTime":
+                            (outputs, _), _ = self.model(batch_x)
+                        else:
                             if self.args.output_attention:
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                             else:
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                        else:
-                            outputs = self.model(batch_x, batch_cycle)
                 else:
-                    if self.args.model != "CycleNet":
+                    if self.args.model == "CycleNet":
+                        outputs = self.model(batch_x, batch_cycle)
+                    elif self.args.model == "SpaceTime":
+                        (outputs, _), _ = self.model(batch_x)
+                    else:
                         if self.args.output_attention:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                         else:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                    else:
-                        outputs = self.model(batch_x, batch_cycle)
                 batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
 
                 pred = outputs.detach().cpu()
@@ -212,6 +222,7 @@ class Exp_Main(Exp_Basic):
         if not os.path.exists(path):
             os.makedirs(path)
 
+        import time
         time_now = time.time()
 
         train_steps = len(train_loader)
@@ -223,6 +234,7 @@ class Exp_Main(Exp_Basic):
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
         
+        batch_start = 0
         if not self.args.inspect_backward_pass is None:
 
             if os.path.exists("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass)):
@@ -238,7 +250,6 @@ class Exp_Main(Exp_Basic):
                                                             for _ in range(self.args.pred_len+1)],
                                            "backward": [torch.zeros(len(train_loader)) \
                                                             for _ in range(self.args.pred_len+1)]}
-                batch_start = 0
 
         elif not self.args.calculate_acf is None:
             autocorrs = []
@@ -250,6 +261,7 @@ class Exp_Main(Exp_Basic):
             self.model.train()
 
             epoch_time = time.time()
+            train_loader = tqdm(train_loader, leave=False)
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_cycle) in enumerate(train_loader):
                
                 if i < batch_start:
@@ -258,16 +270,15 @@ class Exp_Main(Exp_Basic):
                 iter_count += 1
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
-
                 batch_y = batch_y.float().to(self.device)
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
                 
-                print ("Batch %d/%d" % (i, len(train_loader)), end='\r')
-
-                # decoder input
-                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                if not self.args.model == "SpaceTime":
+                    batch_x_mark = batch_x_mark.float().to(self.device)
+                    batch_y_mark = batch_y_mark.float().to(self.device)
+                
+                    # decoder input
+                    dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+                    dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
                 
                 # encoder - decoder
                 if self.args.use_amp:
@@ -277,6 +288,8 @@ class Exp_Main(Exp_Basic):
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                             else:
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                        elif self.args.model == "SpaceTime":
+                            (outputs, y_o), (z_p, z_g) = self.model(batch_x)
                         else:
                             outputs = self.model(batch_x, batch_cycle)
 
@@ -284,16 +297,25 @@ class Exp_Main(Exp_Basic):
                         loss = criterion(outputs, batch_y)
                         train_loss.append(loss.item())
                 else:
-                    if self.args.model != "CycleNet":
+                    if self.args.model == "CycleNet":
+                        outputs = self.model(batch_x, batch_cycle)
+                    elif self.args.model == "SpaceTime":
+                        import time
+                        before = time.time()
+                        (outputs, y_o), (z_p, z_g) = self.model(batch_x)
+                        print (time.time()-before)
+                    else:
                         if self.args.output_attention:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                         else:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                    else:
-                        outputs = self.model(batch_x, batch_cycle)
                     batch_y = batch_y[:, -self.args.pred_len:, :]
                     
                     loss = criterion(outputs, batch_y)
+                    if self.args.model == "SpaceTime":
+                        xy = torch.cat((batch_x, batch_y), dim=1)
+                        loss += criterion(y_o[:, self.model.kernel_dim-1:, :], xy[:, self.model.kernel_dim:self.args.seq_len+1, :])
+                        loss += criterion(z_p[:, self.model.kernel_dim-1:-1, :], z_g[:, self.model.kernel_dim:, :])
                     train_loss.append(loss.item())
                 
                 if i==5 and self.args.gpu_memory_usage:
@@ -455,13 +477,14 @@ class Exp_Main(Exp_Basic):
                 print ('batch %d/%d' % (i, len(test_loader)), end='\r')
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
+                
+                if not self.args.model == "SpaceTime":
+                    batch_x_mark = batch_x_mark.float().to(self.device)
+                    batch_y_mark = batch_y_mark.float().to(self.device)
 
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
-
-                # decoder input
-                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                    # decoder input
+                    dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+                    dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
                 # encoder - decoder
                 
                 if self.args.use_amp:
@@ -471,39 +494,47 @@ class Exp_Main(Exp_Basic):
                                 outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark)[0] \
                                                 for idx in range(batch_x.shape[-1])], dim=-1)
                             else:
-                                if self.args.model != "CycleNet":
-                                    outputs = self.model(batch_x, batch_cycle)
-                                else:
+                                if self.args.model == "CycleNet":
                                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                                elif self.args.model == "SpaceTime":
+                                    (outputs, _), _ = self.model(batch_x)
+                                else:
+                                    outputs = self.model(batch_x, batch_cycle)
                         else:
                             if self.args.features == "SM":
                                 outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark) \
                                                 for idx in range(batch_x.shape[-1])], dim=-1)
                             else:
-                                if self.args.model != "CycleNet":
-                                    outputs = self.model(batch_x, batch_cycle)
-                                else:
+                                if self.args.model == "CycleNet":
                                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                                elif self.args.model == "SpaceTime":
+                                    (outputs, _), _ = self.model(batch_x)
+                                else:
+                                    outputs = self.model(batch_x, batch_cycle)
                 else:
                     if self.args.output_attention:
                         if self.args.features == "SM":
                             outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark)[0] \
                                                     for idx in range(batch_x.shape[-1])], dim=-1)
                         else:
-                            if self.args.model != "CycleNet":
-                                outputs = self.model(batch_x, batch_cycle)
-                            else:
+                            if self.args.model == "CycleNet":
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                            elif self.args.model == "SpaceTime":
+                                (outputs, _), _ = self.model(batch_x)
+                            else:
+                                outputs = self.model(batch_x, batch_cycle)
 
                     else:
                         if self.args.features == "SM":
                             outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark) \
                                                     for idx in range(batch_x.shape[-1])], dim=-1)
                         else:
-                            if self.args.model != "CycleNet":
-                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                            else:
+                            if self.args.model == "CycleNet":
                                 outputs = self.model(batch_x, batch_cycle)
+                            elif self.args.model == "SpaceTime":
+                                (outputs, _), _ = self.model(batch_x)
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
                 if not self.args.calculate_acf is None:
                     for b in range(batch_y.shape[0]):
