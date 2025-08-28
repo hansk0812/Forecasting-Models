@@ -225,10 +225,21 @@ class Exp_Main(Exp_Basic):
         
         if not self.args.inspect_backward_pass is None:
 
-            grad_norms_per_timestep = {"forward": [torch.zeros(len(train_loader)) \
-                                                        for _ in range(self.args.pred_len+1)],
-                                       "backward": [torch.zeros(len(train_loader)) \
-                                                        for _ in range(self.args.pred_len+1)]}
+            if os.path.exists("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass)):
+                load_dict = torch.load("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+                grad_norms_per_timestep = load_dict["gradnorms"]
+                batch_start = load_dict["batch"] + 1
+                
+                if batch_start == len(train_loader):
+                    exit()
+
+            else:
+                grad_norms_per_timestep = {"forward": [torch.zeros(len(train_loader)) \
+                                                            for _ in range(self.args.pred_len+1)],
+                                           "backward": [torch.zeros(len(train_loader)) \
+                                                            for _ in range(self.args.pred_len+1)]}
+                batch_start = 0
+
         elif not self.args.calculate_acf is None:
             autocorrs = []
 
@@ -240,6 +251,10 @@ class Exp_Main(Exp_Basic):
 
             epoch_time = time.time()
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_cycle) in enumerate(train_loader):
+               
+                if i < batch_start:
+                    continue
+                
                 iter_count += 1
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
@@ -320,8 +335,6 @@ class Exp_Main(Exp_Basic):
                                 #    correlate(batch_y[b,:,f].detach().cpu().numpy(), batch_y[b,:,f].detach().cpu().numpy(), method="fft"),
                                 #    correlate(outputs[b,:,f].detach().cpu().numpy(), outputs[b,:,f].detach().cpu().numpy(), method="fft")])
                                 
-                                #autocorr_pred = acf(batch_y[b,:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
-                                #autocorr_gt = acf(outputs[b,:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
                                 autocorr_pred = acf(batch_y[b,:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
                                 autocorr_gt = acf(outputs[b,:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
                                 
@@ -364,6 +377,11 @@ class Exp_Main(Exp_Basic):
                                 if not param.grad is None:
                                     param.grad.fill_(0)
                         
+                        save_dict = {"batch": torch.tensor(i), "gradnorms": grad_norms_per_timestep}
+                        if not os.path.isdir("gradnorms_temp"):
+                            os.mkdir("gradnorms_temp")
+                        torch.save(save_dict, "gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+
                         loss.backward(retain_graph=False)
                         # No zero_grad between batches with detach()
                         for param in self.model.parameters():
