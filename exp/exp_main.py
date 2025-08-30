@@ -300,10 +300,7 @@ class Exp_Main(Exp_Basic):
                     if self.args.model == "CycleNet":
                         outputs = self.model(batch_x, batch_cycle)
                     elif self.args.model == "SpaceTime":
-                        import time
-                        before = time.time()
                         (outputs, y_o), (z_p, z_g) = self.model(batch_x)
-                        print (time.time()-before)
                     else:
                         if self.args.output_attention:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
@@ -390,7 +387,7 @@ class Exp_Main(Exp_Basic):
                                     grad_norms.append(param.grad.norm())
                                 
                                 #print ("Batch %d/%d: Horizon Index %d/%d: Gradients!" % (i, len(train_loader), h, self.args.pred_len), end='\r')
-
+                            
                             grad_norms_per_timestep[self.args.inspect_backward_pass][h][i] = \
                                     sum(grad_norms)/(len(grad_norms)-1) if self.args.inspect_backward_pass == "backward" \
                                     else sum(grad_norms)/(len(grad_norms)-1)

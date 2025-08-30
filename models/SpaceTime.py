@@ -72,14 +72,11 @@ class Model(nn.Module):
         z = einops.repeat(x, 'b l d -> b l (r d)', 
                       r=self.embedding_dim // self.input_dim)
         
-        import time
-        before = time.time()
         z = self.preprocess(z)
         
         z = self.encoder(z)
         
         z = self.encoder_mlp_layers(z) + z
-        print (time.time()-before)
 
         y_c, _ = self.decoder(z)  
         

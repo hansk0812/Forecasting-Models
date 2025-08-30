@@ -99,7 +99,7 @@ if __name__ == "__main__":
     assert args.mode == "gradnorms" or "autocorr" in args.mode
 
     #H = [96, 192, 336, 720]
-    H = [95, 192, 336, 720]
+    H = [96, 192, 336, 720]
     
     plots = OrderedDict()
     
@@ -110,6 +110,13 @@ if __name__ == "__main__":
     
     plot_colors = ["#56ae57", "#894585", "#a5a391", "#0c06f7", "#61de2a", "#ff0789", "#d3b683", "#430541", "#d0e429", "#fdb147", "#850e04", "#efc0fe", "#8fae22", "goldenrod"]
     plot_colors_per_model = np.array(plot_colors)[args.start_color_idx]
+    
+    # heatmap for CycleNet epochs curves
+    #import matplotlib as mpl
+    #cmap = mpl.colormaps['cividis']
+    # Take colors at regular intervals spanning the colormap.
+    #colors = cmap(np.linspace(0.2, 1, 6))   
+    #plot_colors_per_model = np.array(colors)[args.start_color_idx]
 
     for h in H:
 
@@ -144,10 +151,13 @@ if __name__ == "__main__":
                 print ("Missing file:", f_f, f_b)
                 continue
 
-            with open(f_f, 'w') as f:
-                f.writelines(lines_f)
-            with open(f_b, 'w') as f:
-                f.writelines(lines_b)
+            #with open(f_f, 'w') as f:
+            #    f.writelines(lines_f)
+            #with open(f_b, 'w') as f:
+            #    f.writelines(lines_b)
+    
+    types = ["forward", "backward"] if args.mode == "gradnorms" else [str(int(h/int(args.mode.split('=')[-1])))]
+    loss_based_weights = {h: {c: [] for c in types} for h in H}
 
     # midpoints
     midpts, midpts_plot = {}, {}
@@ -159,13 +169,12 @@ if __name__ == "__main__":
 
         fig, ax = plt.subplots()
     
-        types = ["forward", "backward"] if args.mode == "gradnorms" else [str(int(h/int(args.mode.split('=')[-1])))]
-        
         if "autocorr" in args.mode:
             autocorrs_gt = []
         else:
             poly_areas = OrderedDict({k: {} for k in types})
-
+        
+        plot_diffs = {}
         for cutoff_type in types:
             
             #if cutoff_type == "forward":
@@ -173,7 +182,7 @@ if __name__ == "__main__":
 
             fnames = sorted(glob.glob(os.path.join(args.folder, "*_%d_%s_%s.txt" % (
                 h, cutoff_type, args.mode.split('=')[0]))))
-            
+
             for idx in range(len(fnames)-1,-1,-1):
                 if not args.models is None and not fnames[idx].split('/')[-1].split('_')[0] in args.models:
                     del fnames[idx]
@@ -183,6 +192,9 @@ if __name__ == "__main__":
             
             for idx, fname in enumerate(fnames):
                 model = fname.split('/')[-1].split('_')[0]
+                
+                if not model in plot_diffs:
+                    plot_diffs[model] = {}
 
                 if args.mode == "gradnorms":
 
@@ -193,17 +205,30 @@ if __name__ == "__main__":
                         values = []
                         for line in f.readlines():
                             if model.lower() == "spacetime" and "Gra " in line:
-                                first_pt = float(line.split(": ")[-1])
+                                pt = float(line.split(": ")[-1])
+                                loss_based_weights[h][cutoff_type].append(pt)
+                            
                             if not "Grad " in line:
                                 continue
                             values.append(float(line.split(": ")[-1]))
                     
                     p, = plt.plot(np.arange(0, len(values)), values, label=model, 
-                                    color=plot_colors_per_model[idx])
-                    plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors_per_model[idx], linestyle='--')
+                                    color=plot_colors_per_model[idx], linewidth=0.5) 
+                    plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors_per_model[idx], linestyle='--', linewidth=0.5) 
+                    
+                    if model == "SpaceTime":
+                        if cutoff_type == "forward":
+                            text = "H=%s: %.5f\n" % ("0  " if h < 100 else "0    ", loss_based_weights[h][cutoff_type][0])
+                        else:
+                            text =  text + "H=%d: %.5f" % (h, loss_based_weights[h][cutoff_type][0])
+                        
+                            plt.text(0.15, 0.5, text, horizontalalignment='center', verticalalignment='center', transform=ax.transAxes,
+                                    bbox={"facecolor": plot_colors_per_model[idx], "alpha": 0.5, "pad": 0.35, "boxstyle": "round"}, linespacing=1.5)
 
-                    if model.lower() == "spacetime":
-                        plt.plot(0, first_pt, marker='o', color=plot_colors_per_model[idx])
+                    plot_diffs[model][cutoff_type] = values
+
+                    #if model.lower() == "spacetime":
+                    #    plt.plot(0, first_pt, marker='o', color=plot_colors_per_model[idx])
                     
                     # calculate area
                     poly_areas[cutoff_type][model] = []
@@ -260,32 +285,67 @@ if __name__ == "__main__":
 
             if args.mode == "gradnorms":
                 plt.legend([tuple(plots[model]) for model in plots], list(plots.keys()),
-                        handler_map={tuple: HandlerTuple(ndivide=None)}, loc='center right')
+                        handler_map={tuple: HandlerTuple(ndivide=None)}, loc='center right', prop={"size": 6})
+
         if args.mode == "gradnorms":
-            ax_top = ax.twiny()
-            ax_top.set_xlim(ax.get_xlim())
-            ax.set_xlabel("Forward [0->%d]" % h)
-            ax_top.set_xlabel("Backward [%d->0]" % h)
-            reverse_ticks = list(reversed(ax.get_xticklabels()))
-            extent = int(reverse_ticks[0]._x - reverse_ticks[1]._x)
-            
-            if extent == 0:
-                continue
-            
-            start_idx = 0
-            while reverse_ticks[start_idx]._x > h:
-                start_idx += 1
-            if start_idx > 1:
-                start_idx -= 1
-            reverse_ticks[start_idx]._text = str(h)
-            reverse_ticks[start_idx]._x = h
-            for idx, text_obj in enumerate(reverse_ticks[start_idx + 1:]):
-                text_obj._text = str(int(reverse_ticks[start_idx + idx]._x)-extent)
-                text_obj._x = int(text_obj._text)
-            ax_top.set_xticklabels(reverse_ticks)
+#            ax_top = ax.twiny()
+#            ax_top.set_xlim(ax.get_xlim())
+#            ax.set_xlabel("Forward [0->%d]" % h)
+#            ax_top.set_xlabel("Backward [%d->0]" % h)
+#            reverse_ticks = list(reversed(ax.get_xticklabels()))
+#            extent = int(reverse_ticks[0]._x - reverse_ticks[1]._x)
+#            
+#            if extent == 0:
+#                continue
+#            
+#            start_idx = 0
+#            while reverse_ticks[start_idx]._x > h:
+#                start_idx += 1
+#            if start_idx > 1:
+#                start_idx -= 1
+#            reverse_ticks[start_idx]._text = str(h)
+#            reverse_ticks[start_idx]._x = h
+#            for idx, text_obj in enumerate(reverse_ticks[start_idx + 1:]):
+#                text_obj._text = str(int(reverse_ticks[start_idx + idx]._x)-extent)
+#                text_obj._x = int(text_obj._text)
+#            ax_top.set_xticklabels(reverse_ticks)
             plt.savefig("plots/gradnorms_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600, bbox_inches="tight")
             #plt.show(); exit()
-        
+            
+            plt.clf()
+            min_y, midpts_diff = np.inf, {}
+            for idx, model_name in enumerate(sorted(plot_diffs.keys())):
+                diff = np.array(plot_diffs[model_name]["forward"]) - np.array(plot_diffs[model_name]["backward"])
+                plt.plot(list(range(len(diff))), diff, label=model_name, color=plot_colors_per_model[idx])
+                
+                min_y = np.min(np.array([min_y, diff.min()]))
+                midpts_diff[model_name] = np.abs(diff).argmin()
+            
+            for idx, model_name in enumerate(sorted(midpts_diff.keys())):
+                plt.plot(midpts_diff[model_name], min_y, marker='o', markersize=3, color=plot_colors_per_model[idx])
+
+            plt.legend(prop={"size": 6})
+            plt.title("Difference between forward and backward mode gradient norm averages")
+            plt.savefig("plots/gradnorms_%d_%s_diffs.pdf" % (h, "_".join(args.models)), dpi=600, bbox_inches="tight")
+            plt.clf()
+            
+            """
+            # Heatmaps slightly harder to interpret between models
+            for idx, model_name in enumerate(sorted(plot_diffs.keys())):
+                heatmap = np.zeros((h//2,h+1))
+                for jdx in range(h//2):
+                    diff = np.array(plot_diffs[model_name]["forward"])[:h-idx+1] - np.array(plot_diffs[model_name]["backward"])[idx:]
+                    heatmap[jdx][idx:] = diff
+                plt.imshow(heatmap, cmap='hot', interpolation='nearest')
+                plt.title("%s Heatmap of Differences over the first h->h//2 values" % model_name)
+                plt.show()
+                plt.clf()
+            plt.legend(prop={"size": 6})
+            plt.title("Difference between forward and backward mode gradient norm averages")
+            plt.savefig("gradnorms_%d_%s_diffs.pdf" % (h, "_".join(args.models)), dpi=600, bbox_inches="tight")
+            plt.clf()
+            """
+
             # midpoints: 96, 192, 336, 720
             for k in midpts:
                 if not k in midpts_plot:
@@ -303,29 +363,29 @@ if __name__ == "__main__":
                 plt.plot([0, len(poly_areas[cutoff_type][model])], [0, 0], color="black")
                 for cutoff_type in types:
                     plt.plot(np.arange(0, len(poly_areas[cutoff_type][model])),
-                            poly_areas[cutoff_type][model], label=model + "[%d->%d]" % (
-                                0 if cutoff_type=="forward" else len(poly_areas[cutoff_type][model]),
-                                len(poly_areas[cutoff_type][model]) if cutoff_type=="forward" else 0), 
+                            poly_areas[cutoff_type][model], label=model + "[%s->%s]" % (
+                                "0" if cutoff_type=="forward" else "x",
+                                "x" if cutoff_type=="forward" else str(len(poly_areas[cutoff_type][model]))), 
                             color=plot_colors_per_model[idx],
                             linestyle="dashed" if cutoff_type==types[1] else "dotted")
     
-            plt.legend()
+            plt.legend(prop={"size": 6})
             
-            ax_top = ax.twiny()
-            ax_top.set_xlim(ax.get_xlim())
-            ax.set_xlabel("Forward [0->%d] (dotted line)" % h)
-            ax_top.set_xlabel("Backward [%d->0] (dashed line)" % h)
-            reverse_ticks = list(reversed(ax.get_xticklabels()))
-            extent = int(reverse_ticks[0]._x - reverse_ticks[1]._x)
-            start_idx = 0
-            while reverse_ticks[start_idx]._x > h:
-                start_idx += 1
-            reverse_ticks[start_idx]._text = str(h)
-            reverse_ticks[start_idx]._x = h
-            for idx, text_obj in enumerate(reverse_ticks[start_idx + 1:]):
-                text_obj._text = str(int(reverse_ticks[start_idx + idx]._x)-extent)
-                text_obj._x = int(text_obj._text)
-            ax_top.set_xticklabels(reverse_ticks)
+            #ax_top = ax.twiny()
+            #ax_top.set_xlim(ax.get_xlim())
+            #ax.set_xlabel("Forward [0->%d] (dotted line)" % h)
+            #ax_top.set_xlabel("Backward [%d->0] (dashed line)" % h)
+            #reverse_ticks = list(reversed(ax.get_xticklabels()))
+            #extent = int(reverse_ticks[0]._x - reverse_ticks[1]._x)
+            #start_idx = 0
+            #while reverse_ticks[start_idx]._x > h:
+            #    start_idx += 1
+            #reverse_ticks[start_idx]._text = str(h)
+            #reverse_ticks[start_idx]._x = h
+            #for idx, text_obj in enumerate(reverse_ticks[start_idx + 1:]):
+            #    text_obj._text = str(int(reverse_ticks[start_idx + idx]._x)-extent)
+            #    text_obj._x = int(text_obj._text)
+            #ax_top.set_xticklabels(reverse_ticks)
  
             plt.savefig("plots/gradnorms_%d_%s_areas.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600, bbox_inches="tight")
             #plt.show()
@@ -341,7 +401,7 @@ if __name__ == "__main__":
 
     label_plots = []
     for idx, k in enumerate(midpts_plot):
-        p, = plt.plot(H, midpts_plot[k], label=k, marker='o', color=plot_colors_per_model[idx])
+        p, = plt.plot(H, midpts_plot[k], label=k, marker='o', color=plot_colors_per_model[idx], linewidth=0.5) 
         label_plots.append(p)
 
     for h in H:
@@ -375,7 +435,9 @@ if __name__ == "__main__":
                 maxs[m].append(max(area_dict[k][m].max(), (-area_dict[k][m]).max()))
         for k in area_dict:
             for m in area_dict[k]:
-                l = "H=%d: [%s->%s]" % (h, "0" if k=="forward" else "H", "0" if k=="backward" else "H")
+                l = "[ %s  ->  %s ]" % (
+                        "0".rjust(9) if k=="forward" else ("x*%d"%h).rjust(6 if h>100 else 7), 
+                        ("%d"%h).rjust(6 if h>100 else 7) if k=="backward" else ("x*%d"%h).rjust(5 if h>100 else 6))
                 
                 plt.plot(np.arange(0, 1, 1/len(area_dict[k][m])), 
                          area_dict[k][m]/max(maxs[m]), 
@@ -384,12 +446,19 @@ if __name__ == "__main__":
                          linestyle="dashed" if k=="backward" else "dotted")
             
     plt.legend(prop={"size": 6})
-    ax_top = ax.twiny()
-    ax_top.set_xlim(ax.get_xlim())
-    ax.set_xlabel("Forward [0->%d]" % h)
-    ax_top.set_xlabel("Backward [%d->0]" % h)
-    reverse_ticks = list(reversed(ax.get_xticklabels()))
-    ax_top.set_xticklabels(reverse_ticks)
+    #ax_top = ax.twiny()
+    #ax_top.set_xlim(ax.get_xlim())
+    #ax.set_xlabel("Forward [0->%d]" % h)
+    #ax_top.set_xlabel("Backward [%d->0]" % h)
+    #reverse_ticks = list(reversed(ax.get_xticklabels()))
+    #ax_top.set_xticklabels(reverse_ticks)
    
     plt.title('_'.join(args.models))
     plt.savefig("plots/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=600, bbox_inches="tight")
+
+if "SpaceTime" in args.models:
+    for h in H:
+        for l in loss_based_weights[h]["forward"]:
+            print ("SpaceTime %d forward gradnorm average: %.5f" % (h, l))
+        for l in loss_based_weights[h]["backward"]:
+            print ("SpaceTime %d backward gradnorm average: %.5f" % (h, l))

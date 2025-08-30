@@ -30,7 +30,7 @@ def krylov_logarithmic_products(N, A, b, c=None):
     if not c is None:
         Abcs = torch.einsum('...nl, ...n -> ...l', Abcs, c)
     Abcs = Abcs.contiguous() # WOW!!
-
+    
     return Abcs
 
 class FFN(nn.Module):

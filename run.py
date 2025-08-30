@@ -140,8 +140,6 @@ def main():
         model_params = params["models"][json_ft][single_model][str(args.pred_len)]
         
         try:
-            print (os.path.join(params["zoo_path"], single_model, args.features, 
-                                    "*sl%d_*pl%d*" % (model_params["seq_len"], model_params["pred_len"])))
             chkpt_path = glob.glob(os.path.join(params["zoo_path"], single_model, args.features, 
                                     "*sl%d_*pl%d*" % (model_params["seq_len"], model_params["pred_len"])))[0]
 

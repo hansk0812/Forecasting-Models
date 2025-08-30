@@ -65,6 +65,8 @@ class EncoderSSM(SSMBase):
     
     def matrix_power(self, l, c, b, p):
         # Construct companion matrix
+        #A = oe.contract("h i j, h i -> h i j", self.shift_matrix, p) + \
+        #    oe.contract('h i, h j -> h j i', self.p_padding, p)
         A = self.shift_matrix + \
             oe.contract('h i, h j -> h j i', self.p_padding, p)
         
