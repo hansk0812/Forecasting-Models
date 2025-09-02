@@ -2,20 +2,24 @@
 
 ### This repository supports the following models for ETTm2:
 
-###### NBEATS
-###### NHITS
-###### DLinear
-###### NLinear
-###### TiDE
-###### FiLM
+###### NBEATS: https://github.com/Nixtla/neuralforecast
+###### NHITS: https://github.com/Nixtla/neuralforecast
+###### DLinear: https://github.com/cure-lab/LTSF-Linear
+###### NLinear: https://github.com/cure-lab/LTSF-Linear
+###### TiDE: https://github.com/google-research/google-research
+###### FiLM: https://github.com/DAMO-DI-ML/NeurIPS2022-FiLM
 
-###### Informer
-###### Autoformer
-###### FEDformer
-###### PatchTST
+###### SpaceTime: https://github.com/HazyResearch/spacetime
 
-###### Pyraformer
-###### Triformer
+###### MultiResolutionDDPM: https://github.com/dlgudwn1219/mrDiff
+
+###### Informer: https://github.com/MAZiqing/FEDformer
+###### Autoformer: https://github.com/MAZiqing/FEDformer
+###### FEDformer: https://github.com/MAZiqing/FEDformer
+###### PatchTST: https://github.com/yuqinie98/PatchTST
+
+###### Pyraformer: https://github.com/ant-research/Pyraformer
+###### Triformer: https://github.com/razvanc92/triformer
 
 ## Download the model zoo from: [https://bit.ly/LHFModelZoo](https://bit.ly/LHFModelZoo)
 
