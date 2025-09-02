@@ -102,7 +102,7 @@ class Dataset_ETT_hour(Dataset):
 class Dataset_ETT_minute(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTm1.csv',
-                 target='OT', scale=True, timeenc=0, freq='t', cycle=None):
+                 target='OT', scale=True, timeenc=0, freq='t', cycle=32):
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
@@ -147,7 +147,7 @@ class Dataset_ETT_minute(Dataset):
         elif self.features == 'SM':
             cols_data = df_raw.columns[1:]
             df_data = pd.concat([df_raw[[c]].rename(columns={c:"M"}) for c in cols_data], axis=0).sort_index().reset_index(drop=True)
-            nf=len(cols_data)
+            nf=1#len(cols_data)
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
             nf=1
