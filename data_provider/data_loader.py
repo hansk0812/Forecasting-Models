@@ -147,7 +147,7 @@ class Dataset_ETT_minute(Dataset):
         elif self.features == 'SM':
             cols_data = df_raw.columns[1:]
             df_data = pd.concat([df_raw[[c]].rename(columns={c:"M"}) for c in cols_data], axis=0).sort_index().reset_index(drop=True)
-            nf=1#len(cols_data)
+            nf=len(cols_data)
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
             nf=1

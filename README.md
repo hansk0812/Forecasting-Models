@@ -9,6 +9,10 @@
 ###### TiDE: https://github.com/google-research/google-research
 ###### FiLM: https://github.com/DAMO-DI-ML/NeurIPS2022-FiLM
 
+###### SpaceTime: https://github.com/HazyResearch/spacetime
+
+###### MultiResolutionDDPM: https://github.com/dlgudwn1219/mrDiff
+
 ###### Informer: https://github.com/MAZiqing/FEDformer
 ###### Autoformer: https://github.com/MAZiqing/FEDformer
 ###### FEDformer: https://github.com/MAZiqing/FEDformer
