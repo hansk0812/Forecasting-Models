@@ -16,12 +16,12 @@ from models import DLinear, NLinear, NHITS, TiDE, NBEATS, FiLM
 from models import Pyraformer, Triformer
 from models import xLSTM_TS
 from models import SpaceTime
+from models import MultiResolutionDDPM
 
 from models import SAMformer
 from models import CycleNet
 
 from models import NLinearLHF
-
 from models import LHF
 
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
@@ -39,9 +39,10 @@ warnings.filterwarnings('ignore')
 
 class BackwardPassInspectLoss(nn.Module):
 
-    def __init__(self, horizon, cutoff, cutoff_type, device, loss="mae"):
+    def __init__(self, horizon, cutoff, cutoff_type, device, loss="mae", return_batch_dim=False):
         # cutoff_type=forward: For a given horizon, 0:cutoff are 1 and cutoff:horizon are 0
         # cutoff_type=backward: For a given horizon, 0:cutoff are 0 and cutoff:horizon are 1
+        # return_batch_dim=True for DDPM model
         
         super().__init__()
         assert cutoff <= horizon, "GUI Assertion!"
@@ -57,19 +58,22 @@ class BackwardPassInspectLoss(nn.Module):
         else:
             self.loss_fn = self.MAE_per_timestep
 
+        self.mean_dims_per_timestep = (0,2) if not return_batch_dim else (2)
+        self.mean_dims_return = (0) if not return_batch_dim else (1)
+
     def MSE_per_timestep(self, x, y):
         # B, H, D
-        return torch.mean((x-y)**2, dim=(0,2))
+        return torch.mean((x-y)**2, dim=self.mean_dims_per_timestep)
     
     def MAE_per_timestep(self, x, y):
         # B, H, D
-        return torch.mean(torch.abs(x-y), dim=(0,2))
+        return torch.mean(torch.abs(x-y), dim=self.mean_dims_per_timestep)
 
     def forward(self, x, y):
         
         loss = self.loss_fn(x, y)
         loss *= self.mask
-        return torch.mean(loss)
+        return torch.mean(loss, dim=self.mean_dims_return)
 
 class Exp_Main(Exp_Basic):
     def __init__(self, args):
@@ -96,7 +100,8 @@ class Exp_Main(Exp_Basic):
                 'Pyraformer': Pyraformer,
                 'SAMformer': SAMformer,
                 'CycleNet': CycleNet,
-                'SpaceTime': SpaceTime
+                'SpaceTime': SpaceTime,
+                'MultiResolutionDDPM': MultiResolutionDDPM
             }
             try:
                 model_dict['xLSTM_TS'] = xLSTM_TS
@@ -140,9 +145,6 @@ class Exp_Main(Exp_Basic):
                     pass
                 print ("\n", "."*50, "\n\nLoaded initial model from %s\n\n" % self.args.load_from_chkpt, "."*50)
 
-        #from model_size import model_size
-        #print('model size: {:.3f}MB'.format(model_size(model))); exit()
-
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
         return model
@@ -160,7 +162,8 @@ class Exp_Main(Exp_Basic):
             criterion = nn.MSELoss()
         else:
             assert not horizon is None, "Interpreters!"
-            criterion = BackwardPassInspectLoss(horizon, backward_pass_inspect_cutoff, inspect_type, device=self.device)
+            criterion = BackwardPassInspectLoss(horizon, backward_pass_inspect_cutoff, 
+                                                inspect_type, device=self.device, loss=self.args.loss)
         return criterion
 
     def vali(self, vali_data, vali_loader, criterion):
@@ -170,14 +173,17 @@ class Exp_Main(Exp_Basic):
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_cycle) in enumerate(vali_loader):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float()
+                if self.args.model == "MultiResolutionDDPM":
+                    batch_y = batch_y.to(self.device)
                 
                 if not self.args.model == "SpaceTime":
                     batch_x_mark = batch_x_mark.float().to(self.device)
                     batch_y_mark = batch_y_mark.float().to(self.device)
-
-                    # decoder input
-                    dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                    dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                    
+                    if not self.args.model == "MultiResolutionDDPM":
+                        # decoder input
+                        dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+                        dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
@@ -186,6 +192,8 @@ class Exp_Main(Exp_Basic):
                             outputs = self.model(batch_x, batch_cycle)
                         elif self.args.model == "SpaceTime":
                             (outputs, _), _ = self.model(batch_x)
+                        elif self.args.model == "MultiResolutionDDPM":
+                            loss = self.model.train_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                         else:
                             if self.args.output_attention:
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
@@ -196,20 +204,20 @@ class Exp_Main(Exp_Basic):
                         outputs = self.model(batch_x, batch_cycle)
                     elif self.args.model == "SpaceTime":
                         (outputs, _), _ = self.model(batch_x)
+                    elif self.args.model == "MultiResolutionDDPM":
+                        loss = self.model.train_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                     else:
                         if self.args.output_attention:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                         else:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
-
-                pred = outputs.detach().cpu()
-                true = batch_y.detach().cpu()
-
-                loss = criterion(pred, true)
+                
+                if self.args.model != "MultiResolutionDDPM":
+                    loss = criterion(pred, true)
 
                 total_loss.append(loss)
-        total_loss = np.average(total_loss)
+        total_loss = torch.mean(torch.stack(total_loss))
         self.model.train()
         return total_loss
 
@@ -266,7 +274,7 @@ class Exp_Main(Exp_Basic):
                
                 if i < batch_start:
                     continue
-                
+
                 iter_count += 1
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
@@ -275,40 +283,48 @@ class Exp_Main(Exp_Basic):
                 if not self.args.model == "SpaceTime":
                     batch_x_mark = batch_x_mark.float().to(self.device)
                     batch_y_mark = batch_y_mark.float().to(self.device)
-                
-                    # decoder input
-                    dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                    dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                    
+                    if not self.args.model == "MultiResolutionDDPM":
+                        # decoder input
+                        dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+                        dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
                 
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
                         if self.args.model == "CycleNet":
-                            if self.args.output_attention:
-                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
-                            else:
-                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                            outputs = self.model(batch_x, batch_cycle)
                         elif self.args.model == "SpaceTime":
                             (outputs, y_o), (z_p, z_g) = self.model(batch_x)
+                        elif self.args.model == "MultiResolutionDDPM":
+                            loss = self.model.train_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                         else:
-                            outputs = self.model(batch_x, batch_cycle)
-
-                        batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
-                        loss = criterion(outputs, batch_y)
+                             if self.args.output_attention:
+                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                             else:
+                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                        
+                        if self.args.model != "MultiResolutionDDPM":
+                            batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
+                            loss = criterion(outputs, batch_y)
                         train_loss.append(loss.item())
                 else:
                     if self.args.model == "CycleNet":
                         outputs = self.model(batch_x, batch_cycle)
                     elif self.args.model == "SpaceTime":
                         (outputs, y_o), (z_p, z_g) = self.model(batch_x)
+                    elif self.args.model == "MultiResolutionDDPM":
+                        loss = self.model.train_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                     else:
                         if self.args.output_attention:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                         else:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                    batch_y = batch_y[:, -self.args.pred_len:, :]
                     
-                    loss = criterion(outputs, batch_y)
+                    if self.args.model != "MultiResolutionDDPM":
+                        batch_y = batch_y[:, -self.args.pred_len:, :]
+                        loss = criterion(outputs, batch_y)
+
                     if self.args.model == "SpaceTime":
                         xy = torch.cat((batch_x, batch_y), dim=1)
                         loss += criterion(y_o[:, self.model.kernel_dim-1:, :], xy[:, self.model.kernel_dim:self.args.seq_len+1, :])
@@ -377,9 +393,16 @@ class Exp_Main(Exp_Basic):
                             exit()
 
                         for h in range(self.args.pred_len+1):
-                            criterion = self._select_criterion(backward_pass_inspect_cutoff=h, 
-                                            inspect_type=self.args.inspect_backward_pass, horizon=self.args.pred_len)
-                            loss = criterion(outputs, batch_y)
+                            if self.args.model != "MultiResolutionDDPM":
+                                criterion = self._select_criterion(backward_pass_inspect_cutoff=h, 
+                                                inspect_type=self.args.inspect_backward_pass, horizon=self.args.pred_len)
+                                loss = criterion(outputs, batch_y)
+                            else:
+                                self.model.args.inspect_backward_pass = self.args.inspect_backward_pass
+                                for jdx in range(len(self.model.diffusion_workers)):
+                                    self.model.diffusion_workers[jdx].set_backward_pass_inspect_timestep(h)
+                                loss = self.model.train_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
+
                             loss.backward(retain_graph=True)
                             grad_norms = []
                             for param in self.model.parameters():
@@ -406,7 +429,7 @@ class Exp_Main(Exp_Basic):
                         for param in self.model.parameters():
                             if not param.grad is None:
                                 param.grad.detach()
-                        
+
             if self.args.inspect_backward_pass is None and self.args.calculate_acf is None:
                 print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
                 train_loss = np.average(train_loss)
@@ -478,11 +501,11 @@ class Exp_Main(Exp_Basic):
                 if not self.args.model == "SpaceTime":
                     batch_x_mark = batch_x_mark.float().to(self.device)
                     batch_y_mark = batch_y_mark.float().to(self.device)
-
-                    # decoder input
-                    dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                    dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
-                # encoder - decoder
+                    
+                    if not self.args.model == "MultiResolutionDDPM":
+                        # decoder input
+                        dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+                        dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
                 
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
@@ -495,8 +518,10 @@ class Exp_Main(Exp_Basic):
                                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                                 elif self.args.model == "SpaceTime":
                                     (outputs, _), _ = self.model(batch_x)
+                                elif self.args.model == "MultiResolutionDDPM":
+                                    self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                                 else:
-                                    outputs = self.model(batch_x, batch_cycle)
+                                    outputs = self.model(batch_x, batch_cycle)[0]
                         else:
                             if self.args.features == "SM":
                                 outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark) \
@@ -506,6 +531,8 @@ class Exp_Main(Exp_Basic):
                                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                                 elif self.args.model == "SpaceTime":
                                     (outputs, _), _ = self.model(batch_x)
+                                elif self.args.model == "MultiResolutionDDPM":
+                                    self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                                 else:
                                     outputs = self.model(batch_x, batch_cycle)
                 else:
@@ -518,8 +545,10 @@ class Exp_Main(Exp_Basic):
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                             elif self.args.model == "SpaceTime":
                                 (outputs, _), _ = self.model(batch_x)
+                            elif self.args.model == "MultiResolutionDDPM":
+                                self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                             else:
-                                outputs = self.model(batch_x, batch_cycle)
+                                outputs = self.model(batch_x, batch_cycle)[0]
 
                     else:
                         if self.args.features == "SM":
@@ -530,6 +559,8 @@ class Exp_Main(Exp_Basic):
                                 outputs = self.model(batch_x, batch_cycle)
                             elif self.args.model == "SpaceTime":
                                 (outputs, _), _ = self.model(batch_x)
+                            elif self.args.model == "MultiResolutionDDPM":
+                                self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                             else:
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
