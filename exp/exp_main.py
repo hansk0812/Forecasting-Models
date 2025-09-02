@@ -214,7 +214,7 @@ class Exp_Main(Exp_Basic):
                 batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
                 
                 if self.args.model != "MultiResolutionDDPM":
-                    loss = criterion(pred, true)
+                    loss = criterion(outputs, batch_y)
 
                 total_loss.append(loss)
         total_loss = torch.mean(torch.stack(total_loss))
