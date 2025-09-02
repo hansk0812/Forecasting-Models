@@ -21,10 +21,6 @@ from models import MultiResolutionDDPM
 from models import SAMformer
 from models import CycleNet
 
-from models import NLinearLHF
-
-from models import LHF
-
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
 from utils.metrics import metric
 
@@ -38,116 +34,64 @@ from tqdm import tqdm
 
 warnings.filterwarnings('ignore')
 
-class BackwardPassInspectLoss(nn.Module):
-
-    def __init__(self, horizon, cutoff, cutoff_type, device, loss="mae", return_batch_dim=False):
-        # cutoff_type=forward: For a given horizon, 0:cutoff are 1 and cutoff:horizon are 0
-        # cutoff_type=backward: For a given horizon, 0:cutoff are 0 and cutoff:horizon are 1
-        # return_batch_dim=True for DDPM model
-        
-        super().__init__()
-        assert cutoff <= horizon, "GUI Assertion!"
-
-        self.mask = torch.ones(horizon).to(device)
-        if cutoff_type == "forward":
-            self.mask[cutoff:] = 0 # pytorch automatically ignores indices outside the range of the tensor's shape!
-        else:
-            self.mask[:cutoff] = 0
-
-        if loss.lower() == "mse":
-            self.loss_fn = self.MSE_per_timestep
-        else:
-            self.loss_fn = self.MAE_per_timestep
-
-        self.mean_dims_per_timestep = (0,2) if not return_batch_dim else (2)
-        self.mean_dims_return = (0) if not return_batch_dim else (1)
-
-    def MSE_per_timestep(self, x, y):
-        # B, H, D
-        return torch.mean((x-y)**2, dim=self.mean_dims_per_timestep)
-    
-    def MAE_per_timestep(self, x, y):
-        # B, H, D
-        return torch.mean(torch.abs(x-y), dim=self.mean_dims_per_timestep)
-
-    def forward(self, x, y):
-        
-        loss = self.loss_fn(x, y)
-        loss *= self.mask
-        return torch.mean(loss, dim=self.mean_dims_return)
-
 class Exp_Main(Exp_Basic):
     def __init__(self, args):
         super(Exp_Main, self).__init__(args)
 
     def _build_model(self):
 
-        if "LHF/" in self.args.model:
-            model = LHF.Model(self.args).float()    
-        else:
-            model_dict = {
-                'FEDformer': FEDformer,
-                'Autoformer': Autoformer,
-                'Transformer': Transformer,
-                'Informer': Informer,
-                'Triformer': Triformer,
-                'FiLM': FiLM,
-                'DLinear': DLinear,
-                'NLinear': NLinear,
-                'NLinearLHF': NLinearLHF,
-                'NHITS': NHITS,
-                'TiDE': TiDE,
-                'NBEATS': NBEATS,
-                'Pyraformer': Pyraformer,
-                'SAMformer': SAMformer,
-                'CycleNet': CycleNet,
-                'SpaceTime': SpaceTime,
-                'MultiResolutionDDPM': MultiResolutionDDPM
-            }
-            try:
-                model_dict['xLSTM_TS'] = xLSTM_TS
-                if self.args.model == 'xLSTM_TS':
-                    import xlstm
-                    xlstm_dir = os.path.dirname(xlstm.__file__)
-                    os.system(
-                            "sed -i \"s/self.config.embedding_dim=.*/self.config.embedding_dim=%d/\" \"%s/blocks/slstm/layer.py\"" \
-                                    % (self.args.d_model, xlstm_dir))
-                    os.system(
-                            "sed -i \"s/self.config.embedding_dim = .*/self.config.embedding_dim = %d/\" \"%s/blocks/mlstm/layer.py\"" \
-                                    % (self.args.d_model, xlstm_dir))
-                    os.system(
-                            "sed -i \"s/embedding_dim: int = .*/embedding_dim: int = %d/\" %s/xlstm_block_stack.py" \
-                                    % (self.args.d_model, xlstm_dir))
-                    
-                    print ("xLSTM import complete with changes to package!")
+        model_dict = {
+            'FEDformer': FEDformer,
+            'Autoformer': Autoformer,
+            'Transformer': Transformer,
+            'Informer': Informer,
+            'Triformer': Triformer,
+            'FiLM': FiLM,
+            'DLinear': DLinear,
+            'NLinear': NLinear,
+            #'NLinearLHF': NLinearLHF,
+            'NHITS': NHITS,
+            'TiDE': TiDE,
+            'NBEATS': NBEATS,
+            'Pyraformer': Pyraformer,
+            'SAMformer': SAMformer,
+            'CycleNet': CycleNet,
+            'SpaceTime': SpaceTime,
+            'MultiResolutionDDPM': MultiResolutionDDPM
+        }
+        try:
+            model_dict['xLSTM_TS'] = xLSTM_TS
+            if self.args.model == 'xLSTM_TS':
+                import xlstm
+                xlstm_dir = os.path.dirname(xlstm.__file__)
+                os.system(
+                        "sed -i \"s/self.config.embedding_dim=.*/self.config.embedding_dim=%d/\" \"%s/blocks/slstm/layer.py\"" \
+                                % (self.args.d_model, xlstm_dir))
+                os.system(
+                        "sed -i \"s/self.config.embedding_dim = .*/self.config.embedding_dim = %d/\" \"%s/blocks/mlstm/layer.py\"" \
+                                % (self.args.d_model, xlstm_dir))
+                os.system(
+                        "sed -i \"s/embedding_dim: int = .*/embedding_dim: int = %d/\" %s/xlstm_block_stack.py" \
+                                % (self.args.d_model, xlstm_dir))
+                
+                print ("xLSTM import complete with changes to package!")
 
-            except Exception:
-                print ("sed ERROR!")
-                import traceback
-                traceback.print_exc()
-                pass
+        except Exception:
+            print ("sed ERROR!")
+            import traceback
+            traceback.print_exc()
+            pass
 
             model = model_dict[self.args.model].Model(self.args).float()
             
             torch.save(model.state_dict(), "spacetime.pth")
         
         if not self.args.load_from_chkpt is None:
-            if "LHF/" in self.args.model:
-                try:
-                    model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
-                except Exception:
-                    #import traceback
-                    #traceback.print_exc()
-                    print ("COULDN'T LOAD CHECKPOINT FROM FILE OVER PATCHES MODELS! 1 vs n NETWORKS, SIZE DIFFERENCES")
-            else:
-                try:
-                    model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
-                except Exception:
-                    pass
-                print ("\n", "."*50, "\n\nLoaded initial model from %s\n\n" % self.args.load_from_chkpt, "."*50)
-
-        #from model_size import model_size
-        #print('model size: {:.3f}MB'.format(model_size(model))); exit()
+            try:
+                model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
+            except Exception:
+                pass
+            print ("\n", "."*50, "\n\nLoaded initial model from %s\n\n" % self.args.load_from_chkpt, "."*50)
 
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
@@ -247,24 +191,6 @@ class Exp_Main(Exp_Basic):
             scaler = torch.cuda.amp.GradScaler()
         
         batch_start = 0
-        if not self.args.inspect_backward_pass is None:
-
-            if os.path.exists("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass)):
-                load_dict = torch.load("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
-                grad_norms_per_timestep = load_dict["gradnorms"]
-                batch_start = load_dict["batch"] + 1
-                
-                if batch_start == len(train_loader):
-                    exit()
-
-            else:
-                grad_norms_per_timestep = {"forward": [torch.zeros(len(train_loader)) \
-                                                            for _ in range(self.args.pred_len+1)],
-                                           "backward": [torch.zeros(len(train_loader)) \
-                                                            for _ in range(self.args.pred_len+1)]}
-
-        elif not self.args.calculate_acf is None:
-            autocorrs = []
 
         for epoch in range(self.args.train_epochs):
             iter_count = 0
@@ -276,9 +202,6 @@ class Exp_Main(Exp_Basic):
             train_loader = tqdm(train_loader, leave=False)
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_cycle) in enumerate(train_loader):
                
-                if i < batch_start:
-                    continue
-
                 iter_count += 1
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
@@ -357,97 +280,22 @@ class Exp_Main(Exp_Basic):
                     scaler.step(model_optim)
                     scaler.update()
                 else:
-                    if self.args.inspect_backward_pass is None and not self.args.calculate_acf:
-                        loss.backward()
-                        model_optim.step()
-                    elif not self.args.calculate_acf is None:
-                        if epoch > 0:
-                            #print ([len(x) for x in autocorrs])
-                            print ("Autocorrelation for %s pred:" % self.args.model, np.array(autocorrs)[:,:,1:2,:].mean(axis=(0,1,2)))
-                            print ("Autocorrelation for %s gt:" % self.args.model, np.array(autocorrs)[:,:,0:1,:].mean(axis=(0,1,2)))
-                            exit()
-                        
-                        for b in range(batch_y.shape[0]):
-                            feature_autocorrs = []
-                            for f in range(batch_y.shape[2]):
-                                #autocorrs.append([
-                                #    correlate(batch_y[b,:,f].detach().cpu().numpy(), batch_y[b,:,f].detach().cpu().numpy(), method="fft"),
-                                #    correlate(outputs[b,:,f].detach().cpu().numpy(), outputs[b,:,f].detach().cpu().numpy(), method="fft")])
-                                
-                                autocorr_pred = acf(batch_y[b,:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
-                                autocorr_gt = acf(outputs[b,:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
-                                
-                                if not (np.any(np.isnan(autocorr_pred)) or np.any(np.isnan(autocorr_gt))):
-                                    feature_autocorrs.append([autocorr_pred, autocorr_gt])
-                                else:
-                                    break
-                                
-                                if f == batch_y.shape[2]-1:
-                                    autocorrs.append(feature_autocorrs)
+                    loss.backward()
+                    model_optim.step()
+            
+            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+            train_loss = np.average(train_loss)
+            vali_loss = self.vali(vali_data, vali_loader, criterion)
+            test_loss = self.vali(test_data, test_loader, criterion)
+            
+            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            early_stopping(test_loss, self.model, path)
+            if early_stopping.early_stop:
+                print("Early stopping")
+                break
 
-                    else:
-                        if epoch > 0:
-                            for idx in range(self.args.pred_len+1):
-                                if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
-                                    print ("Grad norm for H: %d->%d: %.5f" % (idx, self.args.pred_len,
-                                                                                grad_norms_per_timestep["backward"][idx].mean()))
-                                else:
-                                    print ("Grad norm for H: %d->%d: %.5f" % (1, idx,
-                                                                                grad_norms_per_timestep["forward"][idx].mean()))
-                            exit()
-
-                        for h in range(self.args.pred_len+1):
-                            if self.args.model != "MultiResolutionDDPM":
-                                criterion = self._select_criterion(backward_pass_inspect_cutoff=h, 
-                                                inspect_type=self.args.inspect_backward_pass, horizon=self.args.pred_len)
-                                loss = criterion(outputs, batch_y)
-                            else:
-                                self.model.args.inspect_backward_pass = self.args.inspect_backward_pass
-                                for jdx in range(len(self.model.diffusion_workers)):
-                                    self.model.diffusion_workers[jdx].set_backward_pass_inspect_timestep(h)
-                                loss = self.model.train_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
-
-                            loss.backward(retain_graph=True)
-                            grad_norms = []
-                            for param in self.model.parameters():
-                                if not param.grad is None:
-                                    grad_norms.append(param.grad.norm())
-                                
-                                #print ("Batch %d/%d: Horizon Index %d/%d: Gradients!" % (i, len(train_loader), h, self.args.pred_len), end='\r')
-                            
-                            grad_norms_per_timestep[self.args.inspect_backward_pass][h][i] = \
-                                    sum(grad_norms)/(len(grad_norms)-1) if self.args.inspect_backward_pass == "backward" \
-                                    else sum(grad_norms)/(len(grad_norms)-1)
-                            
-                            for param in self.model.parameters():
-                                if not param.grad is None:
-                                    param.grad.fill_(0)
-                        
-                        save_dict = {"batch": torch.tensor(i), "gradnorms": grad_norms_per_timestep}
-                        if not os.path.isdir("gradnorms_temp"):
-                            os.mkdir("gradnorms_temp")
-                        torch.save(save_dict, "gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
-
-                        loss.backward(retain_graph=False)
-                        # No zero_grad between batches with detach()
-                        for param in self.model.parameters():
-                            if not param.grad is None:
-                                param.grad.detach()
-
-            if self.args.inspect_backward_pass is None and self.args.calculate_acf is None:
-                print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
-                train_loss = np.average(train_loss)
-                vali_loss = self.vali(vali_data, vali_loader, criterion)
-                test_loss = self.vali(test_data, test_loader, criterion)
-                
-                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                    epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-                early_stopping(test_loss, self.model, path)
-                if early_stopping.early_stop:
-                    print("Early stopping")
-                    break
-
-                adjust_learning_rate(model_optim, epoch + 1, self.args)
+            adjust_learning_rate(model_optim, epoch + 1, self.args)
         
         self.model.to(torch.device('cpu'))
         best_model_path = path + '/' + 'checkpoint.pth'
@@ -480,9 +328,6 @@ class Exp_Main(Exp_Basic):
             self.model.load_state_dict(state_dict)
             print ('loaded model')
 
-        if not self.args.calculate_acf is None:
-            autocorrs = []
-        
         preds = []
         trues = []
         folder_path = './test_results/' + setting + '/'
@@ -568,20 +413,7 @@ class Exp_Main(Exp_Basic):
                             else:
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
-                if not self.args.calculate_acf is None:
-                    for b in range(batch_y.shape[0]):
-                        feature_autocorrs = []
-                        for f in range(batch_y.shape[2]):
-                            autocorr_pred = acf(outputs[b,:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
-                            autocorr_gt = acf(batch_y[b,-self.args.pred_len:,f].detach().cpu().numpy(), nlags=self.args.calculate_acf)
-                            
-                            if not (np.any(np.isnan(autocorr_pred)) or np.any(np.isnan(autocorr_gt))):
-                                feature_autocorrs.append([autocorr_pred, autocorr_gt])
-                            else:
-                                break
-                            
-                            if f == batch_y.shape[2]-1:
-                                autocorrs.append(feature_autocorrs)
+                               autocorrs.append(feature_autocorrs)
 
                 batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
                 outputs = outputs.detach().cpu().numpy()
@@ -605,13 +437,8 @@ class Exp_Main(Exp_Basic):
                     print ("allocated per data pt:", torch.cuda.memory_allocated(self.device)/(1024.*1024*1024*self.args.batch_size))
                     print ("reserved per data pt:", torch.cuda.memory_reserved(self.device)/(1024.*1024*1024*self.args.batch_size))
                     print ("Time per epoch: %f seconds" % ((time.time()-epoch_time)*len(test_loader)/(6.)))
-                    exit()               
-                        
-            if not self.args.calculate_acf is None:
-                print ("Autocorrelation for %s pred:" % self.args.model, np.array(autocorrs)[:,:,0:1,:].mean(axis=(0,1,2)))
-                print ("Autocorrelation for %s gt:" % self.args.model, np.array(autocorrs)[:,:,1:2,:].mean(axis=(0,1,2)))
-                exit()
- 
+                    exit()
+        
         preds = np.concatenate(preds, axis=0)
         trues = np.concatenate(trues, axis=0)
         print('test shape:', preds.shape, trues.shape)
@@ -638,22 +465,21 @@ class Exp_Main(Exp_Basic):
     
         plt.rcParams["figure.figsize"] = 5,2
         
-        for s in [0, 75]:
-            start=s
-            x = np.linspace(start,720,num=720-start)
-            y = np.mean((preds-trues)**2, axis=(0,2))[start:]
-            
-            fig, (ax,ax2) = plt.subplots(nrows=2, sharex=True)
+        start=0
+        x = np.linspace(start,720,num=720-start)
+        y = np.mean((preds-trues)**2, axis=(0,2))[start:]
+        
+        fig, (ax,ax2) = plt.subplots(nrows=2, sharex=True)
 
-            extent = [x[0]-(x[1]-x[0])/2., x[-1]+(x[1]-x[0])/2.,0,1]
-            ax.imshow(y[np.newaxis,:], cmap="inferno", aspect="auto", extent=extent)
-            ax.set_yticks([])
-            ax.set_xlim(extent[0], extent[1])
+        extent = [x[0]-(x[1]-x[0])/2., x[-1]+(x[1]-x[0])/2.,0,1]
+        ax.imshow(y[np.newaxis,:], cmap="inferno", aspect="auto", extent=extent)
+        ax.set_yticks([])
+        ax.set_xlim(extent[0], extent[1])
 
-            ax2.plot(x,y)
+        ax2.plot(x,y)
 
-            plt.tight_layout()
-            plt.savefig("%s_heatmap_720_M_start%d.png" % (self.args.model, s))
+        plt.tight_layout()
+        plt.savefig("%s_heatmap_720_M_start%d.png" % (self.args.model, s))
 
         return
 
