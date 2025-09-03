@@ -82,10 +82,8 @@ class Exp_Main(Exp_Basic):
             traceback.print_exc()
             pass
 
-            model = model_dict[self.args.model].Model(self.args).float()
+        model = model_dict[self.args.model].Model(self.args).float()
             
-            torch.save(model.state_dict(), "spacetime.pth")
-        
         if not self.args.load_from_chkpt is None:
             try:
                 model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
