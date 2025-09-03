@@ -93,7 +93,8 @@ class Diffusion_Worker(nn.Module):
         self.eps = 1e-5
 
         self.nn = u_net
-
+        
+        self.args.inspect_backward_pass = None if not hasattr(self.args, "inspect_backward_pass") else self.args.inspect_backward_pass
         self.set_backward_pass_inspect_timestep(self.args.pred_len)
 
     def set_new_noise_schedule(self, given_betas=None, beta_schedule="linear", diff_steps=1000, beta_start=1e-4, beta_end=2e-2

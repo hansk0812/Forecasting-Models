@@ -104,6 +104,7 @@ def main():
     parser.add_argument('--lambdaval', default=0.5, type=float, help="AR SS weightage param")
     
     parser.add_argument('--recurrent', action='store_true', help="xLSTM recurrence flag")
+    parser.add_argument('--gpu_memory_usage', action='store_true', help="Inspect GPU statistics")
     
     args = parser.parse_args()
 
