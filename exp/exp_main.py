@@ -552,8 +552,12 @@ class Exp_Main(Exp_Basic):
 
                     else:
                         if self.args.features == "SM":
-                            outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark) \
-                                                    for idx in range(batch_x.shape[-1])], dim=-1)
+                            if self.args.model == "MultiResolutionDDPM":
+                                outputs = torch.cat([self.model.test_forward(batch_x[...,idx:idx+1], batch_x_mark, batch_y[...,idx:idx+1], batch_y_mark) \
+                                                        for idx in range(batch_x.shape[-1])], dim=-1)
+                            else:
+                                outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark) \
+                                                        for idx in range(batch_x.shape[-1])], dim=-1)
                         else:
                             if self.args.model == "CycleNet":
                                 outputs = self.model(batch_x, batch_cycle)
