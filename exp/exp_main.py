@@ -366,7 +366,7 @@ class Exp_Main(Exp_Basic):
                                 elif self.args.model == "SpaceTime":
                                     (outputs, _), _ = self.model(batch_x)
                                 elif self.args.model == "MultiResolutionDDPM":
-                                    self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
+                                    outputs = self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                                 else:
                                     outputs = self.model(batch_x, batch_cycle)[0]
                         else:
@@ -379,7 +379,7 @@ class Exp_Main(Exp_Basic):
                                 elif self.args.model == "SpaceTime":
                                     (outputs, _), _ = self.model(batch_x)
                                 elif self.args.model == "MultiResolutionDDPM":
-                                    self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
+                                    outputs = self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                                 else:
                                     outputs = self.model(batch_x, batch_cycle)
                 else:
@@ -393,13 +393,13 @@ class Exp_Main(Exp_Basic):
                             elif self.args.model == "SpaceTime":
                                 (outputs, _), _ = self.model(batch_x)
                             elif self.args.model == "MultiResolutionDDPM":
-                                self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
+                                outputs = self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                             else:
                                 outputs = self.model(batch_x, batch_cycle)[0]
 
                     else:
                         if self.args.features == "SM":
-                            outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark) \
+                            outputs = torch.cat([self.model.test_forward(batch_x[...,idx:idx+1], batch_x_mark, batch_y[...,idx:idx+1], batch_y_mark) \
                                                     for idx in range(batch_x.shape[-1])], dim=-1)
                         else:
                             if self.args.model == "CycleNet":
@@ -407,7 +407,7 @@ class Exp_Main(Exp_Basic):
                             elif self.args.model == "SpaceTime":
                                 (outputs, _), _ = self.model(batch_x)
                             elif self.args.model == "MultiResolutionDDPM":
-                                self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
+                                outputs = self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                             else:
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
@@ -475,7 +475,7 @@ class Exp_Main(Exp_Basic):
         ax2.plot(x,y)
 
         plt.tight_layout()
-        plt.savefig("%s_heatmap_720_M_start%d.png" % (self.args.model, s))
+        plt.savefig("%s_heatmap_720_%s.png" % (self.args.model, self.args.features))
 
         return
 
