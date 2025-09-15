@@ -90,7 +90,7 @@ def find_poly_area(coords, h):
 if __name__ == "__main__":
     
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", help="[gradnorms, autocorr=horizon/nlags]")
+    ap.add_argument("mode", help="[gradnorms, autocorr=horizon/nlags]", default="autocorr=1")
     ap.add_argument("folder", help="logs/gradnorms or logs/autocorr folder", default=None)
     ap.add_argument("--models", nargs='+', help="Models to include in visualization. Ignore for all available models.", default=None)
     ap.add_argument("--start_color_idx", default=[0], nargs='+', help="Color idx for single color per model", type=int)
@@ -98,7 +98,6 @@ if __name__ == "__main__":
 
     assert args.mode == "gradnorms" or "autocorr" in args.mode
 
-    #H = [96, 192, 336, 720]
     H = [96, 192, 336, 720]
     
     plots = OrderedDict()
@@ -108,7 +107,8 @@ if __name__ == "__main__":
     #plot_colors = list(mcolors._colors_full_map.values())
     #random.shuffle(plot_colors)
     
-    plot_colors = ["#56ae57", "#894585", "#a5a391", "#0c06f7", "#61de2a", "#ff0789", "#d3b683", "#430541", "#d0e429", "#fdb147", "#850e04", "#efc0fe", "#8fae22", "goldenrod"]
+    plot_colors = ["#56ae57", "#894585", "#a5a391", "#0c06f7", "#61de2a", "#ff0789", "#d3b683", \
+                   "#430541", "#d0e429", "#fdb147", "#850e04", "#efc0fe", "#8fae22", "goldenrod", "crimson"]
     plot_colors_per_model = np.array(plot_colors)[args.start_color_idx]
     
     # heatmap for CycleNet epochs curves
@@ -156,17 +156,14 @@ if __name__ == "__main__":
             #with open(f_b, 'w') as f:
             #    f.writelines(lines_b)
     
-    types = ["forward", "backward"] if args.mode == "gradnorms" else [str(int(h/int(args.mode.split('=')[-1])))]
+    types = ["forward", "backward"] if args.mode == "gradnorms" else [str(h) for h in H]
     loss_based_weights = {h: {c: [] for c in types} for h in H}
 
     # midpoints
     midpts, midpts_plot = {}, {}
     areas = []
     for h_idx, h in enumerate(H):
-
-        #if h < 720:
-        #    continue
-
+        
         fig, ax = plt.subplots()
     
         if "autocorr" in args.mode:
@@ -250,7 +247,8 @@ if __name__ == "__main__":
 
                     flag, autocorrs = False, []
                     with open(fname, 'r') as f:
-                        model =  fname.split('_')[0].split('/')[-1]
+                        model =  fname.split('/')[-1].split('_')[0]
+                        model_idx = args.models.index(model)
                         
                         for line in f.readlines():
                             if "Autocorrelation for" in line or flag:
@@ -266,7 +264,7 @@ if __name__ == "__main__":
                                 flag = True
                     
                     try:
-                        plt.plot(list(range(len(autocorrs[0]))), autocorrs[0], label=model, color=plot_colors_per_model[idx])
+                        plt.plot(list(range(len(autocorrs[0]))), autocorrs[0], label=model, color=plot_colors_per_model[model_idx])
                         autocorrs_gt.append(autocorrs[1])
                     except Exception:
                         import traceback

@@ -27,9 +27,11 @@ def data_provider(args, flag):
         Data = Dataset_Pred
     else:
         shuffle_flag = True
-        drop_last = True
+        drop_last = False
         batch_size = args.batch_size
         freq = args.freq
+    
+    args.scale = None if args.scale=="none" else args.scale
 
     data_set = Data(
         root_path=args.root_path,
@@ -40,9 +42,9 @@ def data_provider(args, flag):
         target=args.target,
         timeenc=timeenc,
         freq=freq,
-        cycle=args.factor
+        cycle=args.factor,
+        scale=args.scale
     )
-    print(flag, len(data_set))
     data_loader = DataLoader(
         data_set,
         batch_size=batch_size,

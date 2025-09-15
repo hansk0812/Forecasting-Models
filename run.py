@@ -55,6 +55,7 @@ def main():
                              'b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
     parser.add_argument('--detail_freq', type=str, default='h', help='like freq, but use in predict')
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
+    parser.add_argument('--scale', type=str, default='zscore', help='normalization function (string): zscore, instance, none')
 
     # forecasting task
     parser.add_argument('--seq_len', type=int, default=96, help='input sequence length')
@@ -247,7 +248,8 @@ def main():
             if not args.load_from_chkpt is None and not os.path.islink(chkpt_symlink):
                 if not os.path.exists(chkpt_symlink):
                     os.symlink(args.load_from_chkpt, chkpt_symlink)
-
+        
+        print ('load_from_chkpt argument:', args.load_from_chkpt)
         exp = Exp(args)  # set experiments
         print ('test > mse:', args.model, args.pred_len, 'horizon size')
         print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))

@@ -140,10 +140,11 @@ class Exp_Main(Exp_Basic):
                     print ("COULDN'T LOAD CHECKPOINT FROM FILE OVER PATCHES MODELS! 1 vs n NETWORKS, SIZE DIFFERENCES")
             else:
                 try:
+                    1/0
                     model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
+                    print ("\n", "."*50, "\n\nLoaded initial model from %s\n\n" % self.args.load_from_chkpt, "."*50)
                 except Exception:
                     pass
-                print ("\n", "."*50, "\n\nLoaded initial model from %s\n\n" % self.args.load_from_chkpt, "."*50)
 
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
@@ -444,7 +445,7 @@ class Exp_Main(Exp_Basic):
                     break
 
                 adjust_learning_rate(model_optim, epoch + 1, self.args)
-        
+            
         self.model.to(torch.device('cpu'))
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
@@ -461,20 +462,23 @@ class Exp_Main(Exp_Basic):
             fpath = os.path.join('./checkpoints/' + setting, 'checkpoint.pth')
             while os.path.islink(fpath):
                 fpath = os.readlink(fpath)
-
-            if not torch.cuda.is_available():
-                state_dict = torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'), map_location=torch.device('cpu'))
-            else:
-                state_dict = torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'))
             
-            if 'module.' in next(iter(state_dict)):
-                from collections import OrderedDict
-                state_dict_new = OrderedDict()
-                for k, v in state_dict.items():
-                    state_dict_new[k[7:]] = v
-                state_dict = state_dict_new
-            self.model.load_state_dict(state_dict)
-            print ('loaded model')
+            if self.args.load_from_chkpt is None:
+                if not torch.cuda.is_available():
+                    state_dict = torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'), map_location=torch.device('cpu'))
+                else:
+                    state_dict = torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'))
+            
+                if 'module.' in next(iter(state_dict)):
+                    from collections import OrderedDict
+                    state_dict_new = OrderedDict()
+                    for k, v in state_dict.items():
+                        state_dict_new[k[7:]] = v
+                    state_dict = state_dict_new
+                self.model.load_state_dict(state_dict)
+                print ('loaded model from checkpoints directory')
+            else:
+                print ('loaded model from load_from_chkpt or json file')
 
         if not self.args.calculate_acf is None:
             autocorrs = []
@@ -564,7 +568,7 @@ class Exp_Main(Exp_Basic):
                             elif self.args.model == "SpaceTime":
                                 (outputs, _), _ = self.model(batch_x)
                             elif self.args.model == "MultiResolutionDDPM":
-                                self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
+                                outputs = self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                             else:
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 

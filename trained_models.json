@@ -363,7 +363,9 @@
                     "d_ff": 2048,
                     "factor": 3,
                     "enc_in": 1,
-                    "dec_in": 1
+                    "dec_in": 1,
+                    "detail_freq": "[8,4,1]",
+                    "moving_avg": "[2,1,1]"
                 },
                 "720": {
                     "features": "SM",
@@ -383,7 +385,7 @@
             "MultiResolutionDDPM": {
                 "96": {
                   "features": "SM",
-                  "seq_len": 720,
+                  "seq_len": 96,
                   "label_len": 48,
                   "pred_len": 96,
                   "d_model": 256,
@@ -699,6 +701,60 @@
                     "factor": 32,
                     "detail_freq": "(5,5,5)"
                 }
+            },
+            "CycleNet": {
+                "96": {
+                  "features": "S",
+                  "seq_len": 96,
+                  "label_len": 48,
+                  "pred_len": 96,
+                  "d_model": 256,
+                  "factor": 64,
+                  "enc_in": 1,
+                  "dec_in": 1,
+                  "c_out": 1,
+                  "e_layers": 2,
+                  "d_layers": 1
+                },
+                 "192": {
+                  "features": "S",
+                  "seq_len": 192,
+                  "label_len": 48,
+                  "pred_len": 192,
+                  "d_model": 256,
+                  "factor": 64,
+                  "enc_in": 1,
+                  "dec_in": 1,
+                  "c_out": 1,
+                  "e_layers": 2,
+                  "d_layers": 1
+                },
+                 "336": {
+                  "features": "S",
+                  "seq_len": 336,
+                  "label_len": 48,
+                  "pred_len": 336,
+                  "d_model": 256,
+                  "factor": 64,
+                  "enc_in": 1,
+                  "dec_in": 1,
+                  "c_out": 1,
+                  "e_layers": 2,
+                  "d_layers": 1
+                },
+                 "720": {
+                  "features": "S",
+                  "seq_len": 720,
+                  "label_len": 48,
+                  "pred_len": 720,
+                  "d_model": 256,
+                  "factor": 64,
+                  "enc_in": 1,
+                  "dec_in": 1,
+                  "c_out": 1,
+                  "e_layers": 2,
+                  "d_layers": 1
+                }
             }
         },
         "S": {
@@ -748,6 +804,126 @@
                     "d_ff": 512,
                     "factor": 64,
                     "detail_freq": "(5,5,5)"
+                }
+            },
+            "MultiResolutionDDPM": {
+                "96": {
+                  "features": "S",
+                  "seq_len": 720,
+                  "label_len": 48,
+                  "pred_len": 96,
+                  "d_model": 256,
+                  "factor": 256,
+                  "enc_in": 1,
+                  "dec_in": 1,
+                  "c_out": 1,
+                  "loss": "mse",
+                  "train_epochs": 1,
+                  "moving_avg": "(5,25,51,201)",
+                  "modes": 100,
+                  "detail_freq": "[1e-4,0.1]"
+                },
+                 "192": {
+                  "features": "SM",
+                  "seq_len": 720,
+                  "label_len": 48,
+                  "pred_len": 192,
+                  "d_model": 256,
+                  "factor": 256,
+                  "enc_in": 1,
+                  "dec_in": 1,
+                  "c_out": 1,
+                  "loss": "mse",
+                  "train_epochs": 2,
+                  "moving_avg": "(5,25,51,201)",
+                  "modes": 100,
+                  "detail_freq": "[1e-4,0.1]"
+                },
+                 "336": {
+                  "features": "SM",
+                  "seq_len": 720,
+                  "label_len": 48,
+                  "pred_len": 336,
+                  "d_model": 256,
+                  "factor": 256,
+                  "enc_in": 1,
+                  "dec_in": 1,
+                  "c_out": 1,
+                  "loss": "mse",
+                  "train_epochs": 1,
+                  "moving_avg": "(5,25,51,201)",
+                  "modes": 100,
+                  "detail_freq": "[1e-4,0.1]"
+                },
+                 "720": {
+                  "features": "SM",
+                  "seq_len": 720,
+                  "label_len": 48,
+                  "pred_len": 720,
+                  "d_model": 256,
+                  "factor": 256,
+                  "enc_in": 1,
+                  "dec_in": 1,
+                  "c_out": 1,
+                  "loss": "mse",
+                  "train_epochs": 1,
+                  "moving_avg": "(5,25,51,201)",
+                  "modes": 100,
+                  "detail_freq": "[1e-4,0.1]"
+                }
+            },
+            "CycleNet": {
+                "96": {
+                  "features": "S",
+                  "seq_len": 96,
+                  "label_len": 48,
+                  "pred_len": 96,
+                  "d_model": 512,
+                  "factor": 64,
+                  "enc_in": 1,
+                  "dec_in": 1,
+                  "c_out": 1,
+                  "e_layers": 2,
+                  "d_layers": 1
+                },
+                 "192": {
+                  "features": "S",
+                  "seq_len": 192,
+                  "label_len": 48,
+                  "pred_len": 192,
+                  "d_model": 256,
+                  "factor": 64,
+                  "enc_in": 1,
+                  "dec_in": 1,
+                  "c_out": 1,
+                  "e_layers": 2,
+                  "d_layers": 1
+                },
+                 "336": {
+                  "features": "S",
+                  "seq_len": 336,
+                  "label_len": 48,
+                  "pred_len": 336,
+                  "d_model": 256,
+                  "factor": 64,
+                  "enc_in": 1,
+                  "dec_in": 1,
+                  "c_out": 1,
+                  "e_layers": 2,
+                  "d_layers": 1
+                },
+                 "720": {
+                  "features": "S",
+                  "seq_len": 720,
+                  "label_len": 48,
+                  "pred_len": 720,
+                  "d_model": 256,
+                  "factor": 64,
+                  "enc_in": 1,
+                  "dec_in": 1,
+                  "c_out": 1,
+                  "e_layers": 2,
+                  "d_layers": 1
                 }
             }
         }

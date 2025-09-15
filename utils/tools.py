@@ -8,7 +8,7 @@ plt.switch_backend('agg')
 def adjust_learning_rate(optimizer, epoch, args):
     # lr = args.learning_rate * (0.2 ** (epoch // 2))
     if args.lradj == 'type1':
-        if args.model in ["NBEATS", "NHITS", "FiLM", "CycleNet", "NLinear", "DLinear", "TiDE"]:
+        if args.model in ["NBEATS", "NHITS", "MultiResolutionDDPM"]:
             lr_adjust = {epoch: args.learning_rate - args.learning_rate * (0.5 ** ((epoch) // 1))}
         else:
             lr_adjust = {epoch: args.learning_rate * (0.5 ** ((epoch-1) // 1))}

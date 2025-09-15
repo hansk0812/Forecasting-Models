@@ -14,7 +14,7 @@ warnings.filterwarnings('ignore')
 class Dataset_ETT_hour(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='HUFL', scale=True, timeenc=0, freq='h'):
+                 target='HUFL', scale=True, timeenc=0, freq='h', cycle=32):
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
@@ -45,17 +45,22 @@ class Dataset_ETT_hour(Dataset):
         df_raw = pd.read_csv(os.path.join(self.root_path,
                                           self.data_path))
 
-        border1s = [0, 12 * 30 * 24 - self.seq_len, 12 * 30 * 24 + 4 * 30 * 24 - self.seq_len]
-        border2s = [12 * 30 * 24, 12 * 30 * 24 + 4 * 30 * 24, 12 * 30 * 24 + 8 * 30 * 24]
+        border1s = [0, 16 * 30 * 24 - self.seq_len, 16 * 30 * 24 + 4 * 30 * 24 - self.seq_len]
+        border2s = [16 * 30 * 24, 16 * 30 * 24 + 4 * 30 * 24, 16 * 30 * 24 + 8 * 30 * 24]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
         if self.features == 'M' or self.features == 'MS':
             cols_data = df_raw.columns[1:]
             df_data = df_raw[cols_data]
+            nf=1
+        elif self.features == 'SM':
+            cols_data = df_raw.columns[1:]
+            df_data = pd.concat([df_raw[[c]].rename(columns={c:"M"}) for c in cols_data], axis=0).sort_index().reset_index(drop=True)
+            nf=len(cols_data)
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
-
+            nf=1
         if self.scale:
             train_data = df_data[border1s[0]:border2s[0]]
             self.scaler.fit(train_data.values)
@@ -102,7 +107,8 @@ class Dataset_ETT_hour(Dataset):
 class Dataset_ETT_minute(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTm1.csv',
-                 target='OT', scale=True, timeenc=0, freq='t', cycle=32):
+                 target='OT', scale="zscore", timeenc=0, freq='t', cycle=32):
+
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
@@ -137,6 +143,8 @@ class Dataset_ETT_minute(Dataset):
 
         border1s = [0, 16 * 30 * 24 * 4 - self.seq_len, 16 * 30 * 24 * 4 + 4 * 30 * 24 * 4 - self.seq_len]
         border2s = [16 * 30 * 24 * 4, 16 * 30 * 24 * 4 + 4 * 30 * 24 * 4, 16 * 30 * 24 * 4 + 8 * 30 * 24 * 4]
+        #border1s = [0, 12 * 30 * 24 * 4 - self.seq_len, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4 - self.seq_len]
+        #border2s = [12 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 8 * 30 * 24 * 4]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
@@ -147,12 +155,12 @@ class Dataset_ETT_minute(Dataset):
         elif self.features == 'SM':
             cols_data = df_raw.columns[1:]
             df_data = pd.concat([df_raw[[c]].rename(columns={c:"M"}) for c in cols_data], axis=0).sort_index().reset_index(drop=True)
-            nf=1#len(cols_data)
+            nf=len(cols_data)
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
             nf=1
-
-        if self.scale:
+        
+        if self.scale == "zscore":
             train_data = df_data[border1s[0]:border2s[0]*nf]
             self.scaler.fit(train_data.values)
             data = self.scaler.transform(df_data.values)
