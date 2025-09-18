@@ -227,13 +227,13 @@ class Model(nn.Module):
         
         stack_types: list = ["identity", "identity", "identity"]
         n_blocks: list = [1, 1, 1]
-        mlp_units: list = 1 * [[config.d_model, config.d_model]]
-        n_pool_kernel_size: list = [2, 2, 2]
-        n_freq_downsample: list = [24, 12, 1]        
+        mlp_units: list = (config.e_layers + config.d_layers) * [[config.d_model, config.d_model]]
+        n_pool_kernel_size: list = [int(x) for x in config.moving_avg[1:-1].split(',')] #[2, 1, 1]
+        n_freq_downsample: list = [int(x) for x in config.detail_freq[1:-1].split(',')] #[64, 32, 8]
         pooling_mode: str = "MaxPool1d"
         interpolation_mode: str = "linear"
-        dropout_prob_theta=0.2
-        activation="ReLU"
+        dropout_prob_theta=config.dropout
+        activation=ACTIVATIONS[3]
         
         # Architecture
         blocks = self.create_stack(
