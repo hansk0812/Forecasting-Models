@@ -113,9 +113,9 @@ if __name__ == "__main__":
     
     # heatmap for CycleNet epochs curves
     #import matplotlib as mpl
-    #cmap = mpl.colormaps['cividis']
+    #cmap = mpl.colormaps['OrRd']
     # Take colors at regular intervals spanning the colormap.
-    #colors = cmap(np.linspace(0.2, 1, 6))   
+    #colors = cmap(np.linspace(0.3, 1, 4))   
     #plot_colors_per_model = np.array(colors)[args.start_color_idx]
 
     for h in H:
