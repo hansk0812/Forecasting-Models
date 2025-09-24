@@ -330,8 +330,16 @@ class Exp_Main(Exp_Basic):
                         xy = torch.cat((batch_x, batch_y), dim=1)
                         loss += criterion(y_o[:, self.model.kernel_dim-1:, :], xy[:, self.model.kernel_dim:self.args.seq_len+1, :])
                         loss += criterion(z_p[:, self.model.kernel_dim-1:-1, :], z_g[:, self.model.kernel_dim:, :])
-                    train_loss.append(loss.item())
+                    
+                    if self.args.model != "MultiResolutionDDPM" or (
+                        self.args.inspect_backward_pass is None and self.args.model == "MultiResolutionDDPM"):
+                    
+                        train_loss.append(loss.item())
                 
+                    if self.args.model == "MultiResolutionDDPM" and not self.args.inspect_backward_pass is None:
+                        outputs = torch.concatenate([x[0] for x in loss], dim=0)
+                        batch_y = torch.concatenate([x[1] for x in loss], dim=0)
+
                 if i==5 and self.args.gpu_memory_usage:
                     from model_size import model_size
                     print ("MEMORY: Model Size: %s: %fMB" % (self.args.model, model_size(self.model)))
@@ -394,16 +402,10 @@ class Exp_Main(Exp_Basic):
                             exit()
 
                         for h in range(self.args.pred_len+1):
-                            if self.args.model != "MultiResolutionDDPM":
-                                criterion = self._select_criterion(backward_pass_inspect_cutoff=h, 
-                                                inspect_type=self.args.inspect_backward_pass, horizon=self.args.pred_len)
-                                loss = criterion(outputs, batch_y)
-                            else:
-                                self.model.args.inspect_backward_pass = self.args.inspect_backward_pass
-                                for jdx in range(len(self.model.diffusion_workers)):
-                                    self.model.diffusion_workers[jdx].set_backward_pass_inspect_timestep(h)
-                                loss = self.model.train_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
-
+                            criterion = self._select_criterion(backward_pass_inspect_cutoff=h, 
+                                            inspect_type=self.args.inspect_backward_pass, horizon=self.args.pred_len)
+                            loss = criterion(outputs, batch_y)
+                                
                             loss.backward(retain_graph=True)
                             grad_norms = []
                             for param in self.model.parameters():

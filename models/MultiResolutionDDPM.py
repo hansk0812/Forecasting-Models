@@ -321,8 +321,8 @@ class Model(nn.Module):
 
                 MASK = torch.ones((np.shape(X1)[0], self.num_vars, self.pred_len)).to(self.device)
                 
-                loss_i = self.diffusion_workers[i].train_forward(X0, X1, mask=MASK, condition=cond, ar_init=linear_guess.permute(0,2,1), return_mean=return_mean)
-                total_loss.append(loss_i)
+                outs = self.diffusion_workers[i].train_forward(X0, X1, mask=MASK, condition=cond, ar_init=linear_guess.permute(0,2,1), return_mean=return_mean)
+                total_loss.append(outs)
 
             else:
                 X1 = future_trends[i].permute(0,2,1)
@@ -337,18 +337,19 @@ class Model(nn.Module):
                 MASK = torch.ones((np.shape(X1)[0], self.num_vars, self.pred_len)).to(self.device)
                 # print("past_trends[i-1]", np.shape(past_trends[i-1]), np.shape(ar_init_trends[i-1]))
 
-                loss_i = self.diffusion_workers[i].train_forward(X0, X1, mask=MASK, condition=cond, ar_init=ar_init_trends[i-1].permute(0,2,1), return_mean=return_mean)
-                total_loss.append(loss_i)
+                outs = self.diffusion_workers[i].train_forward(X0, X1, mask=MASK, condition=cond, ar_init=ar_init_trends[i-1].permute(0,2,1), return_mean=return_mean)
+                total_loss.append(outs)
         
-        if return_mean:
-            total_loss = torch.stack(total_loss).mean()
-        else:
-            if meta_weights is not None:
-                total_loss = torch.stack(total_loss).reshape(-1)
-                train_loss_tmp = [w * total_loss[i] for i, w in enumerate(meta_weights)]
-                total_loss = sum(train_loss_tmp)
+        if self.args.inspect_backward_pass is None:
+            if return_mean:
+                total_loss = torch.stack(total_loss).mean()
             else:
-                total_loss = torch.stack(total_loss).reshape(-1)
+                if meta_weights is not None:
+                    total_loss = torch.stack(total_loss).reshape(-1)
+                    train_loss_tmp = [w * total_loss[i] for i, w in enumerate(meta_weights)]
+                    total_loss = sum(train_loss_tmp)
+                else:
+                    total_loss = torch.stack(total_loss).reshape(-1)
 
         return total_loss
 
@@ -452,7 +453,7 @@ class Model(nn.Module):
                     #    S = 50
                     #else:
                     S = 20
-                    
+
                     samples_ddim, _ = self.samplers[j].sample(S=S,
                                                  conditioning=torch.cat([cA, cB], dim=-1),
                                                  batch_size=B,

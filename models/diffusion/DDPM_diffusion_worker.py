@@ -17,11 +17,6 @@ from torch import optim
 
 from torch.nn.modules import loss
 
-try:
-    from exp.exp_main import BackwardPassInspectLoss
-except Exception:
-    pass
-
 def exists(x):
     return x is not None
 
@@ -166,23 +161,18 @@ class Diffusion_Worker(nn.Module):
         return self.backward_pass_inspect_cutoff
 
     def get_loss(self, pred, target, mean=True):
-        if self.args.inspect_backward_pass is None:
-            if self.args.loss == 'mae':
-                loss = (target - pred).abs()
-                if mean:
-                    loss = loss.mean()
-            elif self.args.loss == 'mse':
-                if mean:
-                    loss = torch.nn.functional.mse_loss(target, pred)
-                else:
-                    loss = torch.nn.functional.mse_loss(target, pred, reduction='none')
+        
+        if self.args.loss == 'mae':
+            loss = (target - pred).abs()
+            if mean:
+                loss = loss.mean()
+        elif self.args.loss == 'mse':
+            if mean:
+                loss = torch.nn.functional.mse_loss(target, pred)
             else:
-                raise NotImplementedError("unknown loss type '{loss_type}'")
+                loss = torch.nn.functional.mse_loss(target, pred, reduction='none')
         else:
-            loss_fn = BackwardPassInspectLoss(self.args.pred_len, self.get_backward_pass_inspect_timestep(), 
-                                           self.args.inspect_backward_pass, device=self.device, loss=self.args.loss,
-                                           return_batch_dim=not mean)
-            loss = loss_fn(target, pred)
+            raise NotImplementedError("unknown loss type '{loss_type}'")
 
         return loss  
 
@@ -221,9 +211,11 @@ class Diffusion_Worker(nn.Module):
         # f_dim = -1 if self.args.features == 'MS' else 0
 
         # if self.args.features == "S":
+        
         model_out = model_out.permute(0,2,1)
         target = target.permute(0,2,1)
-
+        
+        """
         if return_mean:
             if self.args.inspect_backward_pass is None:
                 loss = self.get_loss(model_out[:,:,:], target[:,:,:], mean=False).mean(dim=2).mean(dim=1)
@@ -243,7 +235,10 @@ class Diffusion_Worker(nn.Module):
                     loss = F.mse_loss(model_out[:,:,:], target[:,:,:])
                 else:
                     loss = self.get_loss(model_out, target, mean=True)
+
         return loss
+        """
+        return model_out, target
 
     def predict_start_from_noise(self, x_t, t, noise):
         return (
