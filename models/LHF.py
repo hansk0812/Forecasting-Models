@@ -12,11 +12,13 @@ import math
 import numpy as np
 
 from . import FEDformer, Autoformer, Informer, Transformer
-from . import DLinear, NLinear, TiDE, FiLM
+from . import DLinear, NLinear, TiDE, FiLM, CycleNet
 from . import NBEATS, NHITS
 from . import Pyraformer, Triformer
 from . import xLSTM_TS
 from . import NLinearLHF
+from . import SpaceTime
+from . import MultiResolutionDDPM
 
 from utils.interp import interp1d
 
@@ -35,31 +37,33 @@ class Model(nn.Module):
     """
     def __init__(self, configs):
         super(Model, self).__init__()
-        
+
         self.patches_size = configs.patches_size
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
         self.label_len = configs.label_len
         self.output_attention = configs.output_attention
-        
+
+        self.recurrent = configs.recurrent
+
         patch_model_configs = copy.deepcopy(configs)
 
         assert configs.pred_len % configs.patches_size == 0, "GUI assertion!"
         patch_model_configs.pred_len = configs.patches_size
-        
+
         # Reduce network size to prevent overfitting on smaller horizon
         #configs.d_ff = configs.d_ff // 2
         #configs.d_model = math.floor(configs.d_model / 2)
         #configs.n_heads = configs.n_heads // 2
-    
+
         self.networks = nn.ModuleList([self._build_model(patch_model_configs) for _ in range(self.pred_len//self.patches_size)])
-        
+
         if not configs.load_from_chkpt is None:
             try:
                 for net in self.networks:
                     chkpt_f = torch.load(configs.load_from_chkpt)
                     chkpt_m = net.state_dict()
-                    
+
                     for cf, cm in zip(chkpt_f, chkpt_m):
                         if not all([chkpt_f[cf].shape[idx]==chkpt_m[cm].shape[idx] for idx in range(len(chkpt_f[cf].shape))]):
                             print ("Skipping %s from checkpoint file!" % cf)
@@ -76,7 +80,7 @@ class Model(nn.Module):
                 except Exception:
                     traceback.print_exc()
                     print ("Cannot load checkpoint from file!")
-        
+
         self.self_supervision = configs.self_supervised_patches
 
     def _build_model(self, args):
@@ -95,10 +99,13 @@ class Model(nn.Module):
             'NLinearLHF': NLinearLHF,
             'TiDE': TiDE,
             'xLSTM_TS': xLSTM_TS,
+            'CycleNet': CycleNet,
+            'SpaceTime': SpaceTime,
+            'MultiResolutionDDPM': MultiResolutionDDPM
         }
         model_name = args.model.split('/')[-1]
         model = model_dict[model_name].Model(args).float()
-        
+
         if "LHF/" in args.model:
             try:
                 if not args.load_from_chkpt is None:
@@ -125,16 +132,16 @@ class Model(nn.Module):
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec,
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None):
-        
+
         x_dec_patch = self.split_dec(x_dec)
         x_mark_dec_patch = self.split_dec(x_mark_dec)
-        
+
         if not dec_self_mask is None:
             raise NotImplementedError
 
         out_final, attns_final = [], []
         for idx in range(len(self.networks)):
-            
+
             if not self.self_supervision is None and "io" in self.self_supervision:
                 if idx > 0:
                     x_append = torch.cat((x_enc, out[:,-self.pred_len:,:]), dim=1)
@@ -146,19 +153,20 @@ class Model(nn.Module):
                         x_enc = interp1d(torch.arange(0, self.pred_len+self.seq_len, 1),
                                          x_append,
                                          torch.arange(0, self.pred_len+self.seq_len, (self.seq_len+self.pred_len)/self.seq_len))
-                                         
+
                     x_dec_patch[idx] = torch.cat((out[:,-self.label_len:,:], x_dec_patch[idx][:,self.label_len:,:]), dim=1)
 
             if self.output_attention:
                 out, attns = self.networks[idx](x_enc, x_mark_enc, x_dec_patch[idx], x_mark_dec_patch[idx],
                                                 enc_self_mask, dec_self_mask, dec_enc_mask)
+
                 out_final.append(out[:, -self.pred_len:, :])
                 attns_final.append(out)
             else:
                 out = self.networks[idx](x_enc, x_mark_enc, x_dec_patch[idx], x_mark_dec_patch[idx],
                                             enc_self_mask, dec_self_mask, dec_enc_mask)
                 out_final.append(out[:, -self.pred_len:, :])
-        
+
         out_final = torch.concat(out_final, dim=1)
         if self.output_attention:
             attns_final = torch.concat(attns_final, dim=1)

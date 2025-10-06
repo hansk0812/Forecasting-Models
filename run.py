@@ -116,7 +116,7 @@ def main():
     parser.add_argument('--step', default=1, type=float, help="AR SS arange param2")
     parser.add_argument('--lambdaval', default=0.5, type=float, help="AR SS weightage param")
     
-    parser.add_argument('--recurrent', action='store_true', help="xLSTM recurrence flag")
+    parser.add_argument('--recurrent', action='store_true', help="xLSTM recurrence flag + recurrent LHF")
     
     args = parser.parse_args()
 
