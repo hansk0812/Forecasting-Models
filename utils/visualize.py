@@ -21,7 +21,7 @@ def find_poly_area(coords, h):
     # find the area under the curve using its curve polygon 
     # against the ideal case of gradient norm distributions
     # across the horizon timesteps from 0 to h
-    # the area is negative if the curve is below the H=0 --> H=H line as convention
+    # the area is negative if the curve is below the H=0 -→ H=H line as convention
     
     index = np.where(coords[:,0] == h)[0][0]
     
@@ -112,11 +112,11 @@ if __name__ == "__main__":
     plot_colors_per_model = np.array(plot_colors)[args.start_color_idx]
     
     # heatmap for CycleNet epochs curves
-    #import matplotlib as mpl
-    #cmap = mpl.colormaps['OrRd']
+    import matplotlib as mpl
+    cmap = mpl.colormaps['OrRd'] #["BuPu"]
     # Take colors at regular intervals spanning the colormap.
-    #colors = cmap(np.linspace(0.3, 1, 4))   
-    #plot_colors_per_model = np.array(colors)[args.start_color_idx]
+    colors = cmap(np.linspace(0.3, 1, 4))   
+    plot_colors_per_model = np.array(colors)[args.start_color_idx]
 
     for h in H:
 
@@ -187,6 +187,8 @@ if __name__ == "__main__":
             if len(fnames) == 0:
                 print ("H=%d files not found!" % h if args.mode == "gradnorms" else int(h/int(cutoff_type))); continue #exit()
             
+            fnames = sorted(fnames, key=lambda x: x.split('/')[-1].split(".pdf")[0])
+            print (fnames)
             for idx, fname in enumerate(fnames):
                 model = fname.split('/')[-1].split('_')[0]
                 
@@ -277,22 +279,25 @@ if __name__ == "__main__":
                 plt.xlabel("H=%d lags" % h)
                 plt.ylabel("Autocorrelation")
                 plt.title("Self attention models' ACF averages over the test set")
-                plt.savefig("plots/autocorrs_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600, bbox_inches="tight")
+                plt.savefig("plots_/autocorrs_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
                 #plt.show()
                 plt.clf()
 
             if args.mode == "gradnorms":
                 plt.legend([tuple(plots[model]) for model in plots], list(plots.keys()),
-                        handler_map={tuple: HandlerTuple(ndivide=None)}, loc='center right', prop={"size": 6})
+                        handler_map={tuple: HandlerTuple(ndivide=None)}, prop={"size": 6})#, loc="top") #loc='center right')
 
         if args.mode == "gradnorms":
-#            ax_top = ax.twiny()
+            ax_top = ax.twiny()
+            ax_top.set_xticks([])
+            ax_top.set_xlabel("Anti-Causal Sub-Series: x→%d" % h)
+
 #            ax_top.set_xlim(ax.get_xlim())
-#            ax.set_xlabel("Forward [0->%d]" % h)
-#            ax_top.set_xlabel("Backward [%d->0]" % h)
+#            ax.set_xlabel("Forward [0→%d]" % h)
+#            ax_top.set_xlabel("Anti-Causal Sub-Series: x → x_reverse)")
 #            reverse_ticks = list(reversed(ax.get_xticklabels()))
 #            extent = int(reverse_ticks[0]._x - reverse_ticks[1]._x)
-#            
+##            
 #            if extent == 0:
 #                continue
 #            
@@ -304,16 +309,25 @@ if __name__ == "__main__":
 #            reverse_ticks[start_idx]._text = str(h)
 #            reverse_ticks[start_idx]._x = h
 #            for idx, text_obj in enumerate(reverse_ticks[start_idx + 1:]):
-#                text_obj._text = str(int(reverse_ticks[start_idx + idx]._x)-extent)
-#                text_obj._x = int(text_obj._text)
+#                text_obj._text = str(h) #str(int(reverse_ticks[start_idx + idx]._x)-extent)
+#                text_obj._x = h #int(text_obj._text)
 #            ax_top.set_xticklabels(reverse_ticks)
-            plt.savefig("plots/gradnorms_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600, bbox_inches="tight")
+            
+            #ax.set_ylim(top=0.009)
+
+            ax.set_xlabel("Causal Sub-Series: 0→x")
+            ax.set_ylabel("Gradient Norm Average")
+            plt.savefig("plots_/gradnorms_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
+            
             #plt.show(); exit()
             
             plt.clf()
             min_y, midpts_diff = np.inf, {}
+            plt.plot(list(range(h+1)), np.arange(-1, 1, 2./(h+1)), linestyle="--", color='black', label="Uniform Differences Line")
             for idx, model_name in enumerate(sorted(plot_diffs.keys())):
+                print ("diffs: %s" % model_name)
                 diff = np.array(plot_diffs[model_name]["forward"]) - np.array(plot_diffs[model_name]["backward"])
+                diff /= diff.max()
                 plt.plot(list(range(len(diff))), diff, label=model_name, color=plot_colors_per_model[idx])
                 
                 min_y = np.min(np.array([min_y, diff.min()]))
@@ -322,9 +336,11 @@ if __name__ == "__main__":
             for idx, model_name in enumerate(sorted(midpts_diff.keys())):
                 plt.plot(midpts_diff[model_name], min_y, marker='o', markersize=3, color=plot_colors_per_model[idx])
 
-            plt.legend(prop={"size": 6})
-            plt.title("Difference between forward and backward mode gradient norm averages")
-            plt.savefig("plots/gradnorms_%d_%s_diffs.pdf" % (h, "_".join(args.models)), dpi=600, bbox_inches="tight")
+            plt.legend(prop={"size": 6}, loc="best")
+            #plt.title("Difference between forward and backward mode gradient norm averages")
+            plt.xlabel("Timestep h for subseries")
+            plt.ylabel("Difference at h [g(0→h) - g(h→%d)]" % h)
+            plt.savefig("plots_/gradnorms_%d_%s_diffs.pdf" % (h, "_".join(args.models)), dpi=300, bbox_inches="tight")
             plt.clf()
             
             """
@@ -335,7 +351,7 @@ if __name__ == "__main__":
                     diff = np.array(plot_diffs[model_name]["forward"])[:h-idx+1] - np.array(plot_diffs[model_name]["backward"])[idx:]
                     heatmap[jdx][idx:] = diff
                 plt.imshow(heatmap, cmap='hot', interpolation='nearest')
-                plt.title("%s Heatmap of Differences over the first h->h//2 values" % model_name)
+                plt.title("%s Heatmap of Differences over the first h→h//2 values" % model_name)
                 plt.show()
                 plt.clf()
             plt.legend(prop={"size": 6})
@@ -361,7 +377,7 @@ if __name__ == "__main__":
                 plt.plot([0, len(poly_areas[cutoff_type][model])], [0, 0], color="black")
                 for cutoff_type in types:
                     plt.plot(np.arange(0, len(poly_areas[cutoff_type][model])),
-                            poly_areas[cutoff_type][model], label=model + "[%s->%s]" % (
+                            poly_areas[cutoff_type][model], label=model + "[%s→%s]" % (
                                 "0" if cutoff_type=="forward" else "x",
                                 "x" if cutoff_type=="forward" else str(len(poly_areas[cutoff_type][model]))), 
                             color=plot_colors_per_model[idx],
@@ -371,8 +387,8 @@ if __name__ == "__main__":
             
             #ax_top = ax.twiny()
             #ax_top.set_xlim(ax.get_xlim())
-            #ax.set_xlabel("Forward [0->%d] (dotted line)" % h)
-            #ax_top.set_xlabel("Backward [%d->0] (dashed line)" % h)
+            #ax.set_xlabel("Forward [0→%d] (dotted line)" % h)
+            #ax_top.set_xlabel("Backward [%d→0] (dashed line)" % h)
             #reverse_ticks = list(reversed(ax.get_xticklabels()))
             #extent = int(reverse_ticks[0]._x - reverse_ticks[1]._x)
             #start_idx = 0
@@ -384,8 +400,12 @@ if __name__ == "__main__":
             #    text_obj._text = str(int(reverse_ticks[start_idx + idx]._x)-extent)
             #    text_obj._x = int(text_obj._text)
             #ax_top.set_xticklabels(reverse_ticks)
- 
-            plt.savefig("plots/gradnorms_%d_%s_areas.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600, bbox_inches="tight")
+            
+            #plt.ylim(top=0.75)
+            
+            plt.xlabel("Timesteps")
+            plt.ylabel("Signed Area w.r.t line of proportionality")
+            plt.savefig("plots_/gradnorms_%d_%s_areas.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
             #plt.show()
             plt.clf()
 
@@ -409,11 +429,13 @@ if __name__ == "__main__":
     label_keys = list(midpts_plot.keys())
     label_keys.append("H/2 Line")
     plt.legend(label_plots, label_keys, handler_map={tuple: HandlerTuple(ndivide=None)})
-    plt.title("Gradient equivariance points over the horizon")
+    #plt.title("Gradient equivariance points over the horizon")
     
     plt.xticks(H, ["H=%d" % H[idx] for idx in range(len(H))])
     
-    plt.savefig("plots/gradnorms_%d_%s_midpts.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=600, bbox_inches="tight")
+    plt.xlabel("Model Horizon Sizes")
+    plt.ylabel("Gradient Equivariant Timesteps")
+    plt.savefig("plots_/gradnorms_%d_%s_midpts.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
     #plt.show()
     
     fig, ax = plt.subplots()
@@ -433,7 +455,7 @@ if __name__ == "__main__":
                 maxs[m].append(max(area_dict[k][m].max(), (-area_dict[k][m]).max()))
         for k in area_dict:
             for m in area_dict[k]:
-                l = "[ %s  ->  %s ]" % (
+                l = "[ %s  →  %s ]" % (
                         "0".rjust(9) if k=="forward" else ("x*%d"%h).rjust(6 if h>100 else 7), 
                         ("%d"%h).rjust(6 if h>100 else 7) if k=="backward" else ("x*%d"%h).rjust(5 if h>100 else 6))
                 
@@ -446,13 +468,56 @@ if __name__ == "__main__":
     plt.legend(prop={"size": 6})
     #ax_top = ax.twiny()
     #ax_top.set_xlim(ax.get_xlim())
-    #ax.set_xlabel("Forward [0->%d]" % h)
-    #ax_top.set_xlabel("Backward [%d->0]" % h)
+    #ax.set_xlabel("Forward [0→%d]" % h)
+    #ax_top.set_xlabel("Backward [%d→0]" % h)
     #reverse_ticks = list(reversed(ax.get_xticklabels()))
     #ax_top.set_xticklabels(reverse_ticks)
    
     plt.title('_'.join(args.models))
-    plt.savefig("plots/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=600, bbox_inches="tight")
+    plt.xlabel("Fraction of Horizon")
+    plt.ylabel("Fraction of gradient norm average")
+    plt.savefig("plots_/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=300, bbox_inches="tight")
+
+    fig, ax = plt.subplots()
+    plt.plot([0, 1], [0, 0], color="black")
+
+    print (len(areas), areas[0].keys(), areas[0]["forward"]); exit()
+    # plot areas in a single 0-1 plot
+    for idx, (h, area_dict) in enumerate(zip(H, areas)):
+        maxs = {m: [] for m in area_dict["forward"].keys()}
+        for k in area_dict:
+            for m in area_dict[k]:
+                area_dict[k][m] = np.array(area_dict[k][m])
+                #mask = (area_dict[k][m]>0).astype(np.int32)
+                #area_plot = np.sqrt(area_dict[k][m]*mask)
+                #area_plot += -np.sqrt(-area_dict[k][m]*(1-mask))
+                #area_plot /= np.sqrt(float(h))
+                area_dict[k][m] = area_dict[k][m] / h
+                maxs[m].append(max(area_dict[k][m].max(), (-area_dict[k][m]).max()))
+        for k in area_dict:
+            for m in area_dict[k]:
+                l = "[ %s  →  %s ]" % (
+                        "0".rjust(9) if k=="forward" else ("x*%d"%h).rjust(6 if h>100 else 7), 
+                        ("%d"%h).rjust(6 if h>100 else 7) if k=="backward" else ("x*%d"%h).rjust(5 if h>100 else 6))
+                
+                plt.plot(np.arange(0, 1, 1/len(area_dict[k][m])), 
+                         area_dict[k][m]/max(maxs[m]), 
+                         label=l, 
+                         color=plot_colors[idx],
+                         linestyle="dashed" if k=="backward" else "dotted")
+            
+    plt.legend(prop={"size": 6})
+    #ax_top = ax.twiny()
+    #ax_top.set_xlim(ax.get_xlim())
+    #ax.set_xlabel("Forward [0→%d]" % h)
+    #ax_top.set_xlabel("Backward [%d→0]" % h)
+    #reverse_ticks = list(reversed(ax.get_xticklabels()))
+    #ax_top.set_xticklabels(reverse_ticks)
+   
+    plt.title('_'.join(args.models))
+    plt.xlabel("Fraction of Horizon")
+    plt.ylabel("Fraction of gradient norm average")
+    plt.savefig("plots_/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=300, bbox_inches="tight")
 
 if "SpaceTime" in args.models:
     for h in H:

@@ -106,6 +106,7 @@ def main():
     parser.add_argument('--gpu_memory_usage', action="store_true", help="If True, prints GPU memory usage summary and exits")
     parser.add_argument('--inspect_backward_pass', default=None, help="Uses 0-masked loss [forward, backward] to inspect gradients by horizon")
     parser.add_argument('--calculate_acf', default=None, type=int, help="Uses a lag of value specified as argument for ACF")
+    parser.add_argument('--backward_pass_set', default="train", type=str, help="One of [\"train\", \"val\", \"test\"]")
 
     parser.add_argument('--model_params_json', default=None, help="Path to JSON file with model hyperparameters and model zoo dir if available")
     parser.add_argument('--patches_size', default=None, type=int, help="Divide H into H/patches_size models")
@@ -119,6 +120,8 @@ def main():
     parser.add_argument('--recurrent', action='store_true', help="xLSTM recurrence flag + recurrent LHF")
     
     args = parser.parse_args()
+
+    assert args.backward_pass_set in ["train", "val", "test"], "backward_pass_set argument not in train, val, test"
 
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
 

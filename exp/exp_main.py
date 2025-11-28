@@ -7,6 +7,8 @@ import traceback
 
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
+
 from torch import optim
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
@@ -28,6 +30,9 @@ from utils.tools import EarlyStopping, adjust_learning_rate, visual
 from utils.metrics import metric
 
 import matplotlib.pyplot as plt
+from matplotlib import colormaps
+cmap = colormaps["Reds"]
+
 import numpy as np; np.random.seed(1)
 
 from scipy.signal import correlate
@@ -140,7 +145,7 @@ class Exp_Main(Exp_Basic):
                     print ("COULDN'T LOAD CHECKPOINT FROM FILE OVER PATCHES MODELS! 1 vs n NETWORKS, SIZE DIFFERENCES")
             else:
                 try:
-                    1/0
+                    #1/0
                     model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
                     print ("\n", "."*50, "\n\nLoaded initial model from %s\n\n" % self.args.load_from_chkpt, "."*50)
                 except Exception:
@@ -226,20 +231,32 @@ class Exp_Main(Exp_Basic):
         train_data, train_loader = self._get_data(flag='train')
         vali_data, vali_loader = self._get_data(flag='val')
         test_data, test_loader = self._get_data(flag='test')
+        
+        if not self.args.inspect_backward_pass is None:
+            if self.args.backward_pass_set == "val":
+                train_data, train_loader = vali_data, vali_loader
+            elif self.args.backward_pass_set == "test":
+                train_data, train_loader = test_data, test_loader
 
         path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(path):
             os.makedirs(path)
 
+        if not self.args.load_from_chkpt is None:
+            state_dict = torch.load(self.args.load_from_chkpt)
+            self.model.load_state_dict(state_dict)
+
         import time
         time_now = time.time()
 
         train_steps = len(train_loader)
-        early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
 
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
 
+        test_loss = self.vali(test_data, test_loader, criterion)
+        early_stopping = EarlyStopping(patience=self.args.patience, verbose=True, val_loss_min=test_loss)
+        
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
         
@@ -411,7 +428,6 @@ class Exp_Main(Exp_Basic):
                             for param in self.model.parameters():
                                 if not param.grad is None:
                                     grad_norms.append(param.grad.norm())
-                                
                                 #print ("Batch %d/%d: Horizon Index %d/%d: Gradients!" % (i, len(train_loader), h, self.args.pred_len), end='\r')
                             
                             grad_norms_per_timestep[self.args.inspect_backward_pass][h][i] = \
@@ -456,6 +472,20 @@ class Exp_Main(Exp_Basic):
 
         return self.model
 
+    def interpolate1d(self, tensor, length):
+        
+        indices_out = torch.arange(length).to(tensor.device) * tensor.shape[0] / length
+        lower_idxs, upper_idxs = torch.floor(indices_out).long(), torch.ceil(indices_out).long().clamp(0, tensor.shape[0]-1)
+        
+        m = (tensor[upper_idxs] - tensor[lower_idxs]) / (upper_idxs - lower_idxs) #+ 1e-9)
+        c = tensor[lower_idxs] - (m * lower_idxs)
+        
+        selection = tensor[upper_idxs]
+        bilinear_interpolation = m * indices_out + c
+        out = torch.where(upper_idxs == lower_idxs, selection, bilinear_interpolation)
+
+        return out
+
     def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')
         if test:
@@ -497,8 +527,15 @@ class Exp_Main(Exp_Basic):
             self.args.features = "SM"
         
         epoch_time = time.time()
-        self.model.eval()
-        with torch.no_grad():
+        
+        if self.args.inspect_backward_pass is None:
+            self.model.eval()
+        else:
+            self.model.train()
+
+        colors = np.array(cmap(np.linspace(0., 1., self.args.pred_len+1)))
+        
+        with torch.no_grad() if self.args.inspect_backward_pass is None else torch.enable_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_cycle) in enumerate(test_loader):
                 print ('batch %d/%d' % (i, len(test_loader)), end='\r')
                 batch_x = batch_x.float().to(self.device)
@@ -588,6 +625,51 @@ class Exp_Main(Exp_Basic):
                             
                             if f == batch_y.shape[2]-1:
                                 autocorrs.append(feature_autocorrs)
+                
+                elif not self.args.inspect_backward_pass is None:
+                    
+                    grad_cams = [] # Uses last layer features - per layer activation maps
+                    grad_cams_heatmap = np.zeros((self.args.pred_len+1, self.args.seq_len))
+
+                    for h in range(self.args.pred_len+1):
+                        criterion = self._select_criterion(backward_pass_inspect_cutoff=h, 
+                                        inspect_type=self.args.inspect_backward_pass, horizon=self.args.pred_len)
+                        loss = criterion(outputs, batch_y)
+                            
+                        loss.backward(retain_graph=True)
+                        grad_cams = []
+                        for n, param in self.model.named_parameters():
+                            if not param.grad is None:
+                                #indices = list(set(list(range(len(param.grad.shape)))) - set(
+                                #    [idx for idx, x in enumerate(param.grad.shape) if x == self.args.d_model]))
+                                #if len(indices) == 0 and len(param.grad.shape) > 1:
+                                #    indices = [1]
+                                
+                                if len(param.grad.shape) > 1:
+                                    indices = [0] if len(param.grad.shape) > 1 else [] # All Linear layers have weights with input dimension in index 1
+                                    if len(indices) > 0:
+                                        #gradcam_wt = (param.grad.mean(dim=indices) * param.grad).mean(dim=indices)
+                                        # Length alone doesn't fully represent the feature
+                                        gradcam_wt = (param.grad.mean() * param).mean(dim=indices)
+                                    else:
+                                        gradcam_wt = param.grad.mean() * param
+
+                                    gradcam_wt = self.interpolate1d(gradcam_wt, self.args.pred_len)
+
+                                    grad_cams.append(gradcam_wt)
+                        
+                        grad_cams = F.softmax(torch.stack(grad_cams).mean(dim=0))
+                        grad_cams_heatmap[h] = grad_cams.detach().cpu().numpy()
+
+                        for param in self.model.parameters():
+                            if not param.grad is None:
+                                param.grad.fill_(0)
+                    
+                    loss.backward(retain_graph=False)
+                    # No zero_grad between batches with detach()
+                    for param in self.model.parameters():
+                        if not param.grad is None:
+                            param.grad.detach()
 
                 batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
                 outputs = outputs.detach().cpu().numpy()
@@ -595,6 +677,23 @@ class Exp_Main(Exp_Basic):
 
                 pred = outputs  # outputs.detach().cpu().numpy()  # .squeeze()
                 true = batch_y  # batch_y.detach().cpu().numpy()  # .squeeze()
+                
+                #plt.imshow(grad_cams_heatmap, cmap="gist_heat")
+                #for idx in range(len(grad_cams_heatmap)):
+                #    plt.plot(np.arange(self.args.seq_len), grad_cams_heatmap[idx], color=colors[idx])
+                #    plt.savefig("sample.png"); 
+                #plt.savefig("sample.png")
+                #exit()
+
+#                if epoch > 0:
+#                    for idx in range(self.args.pred_len+1):
+#                        if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
+#                            print ("Grad norm for H: %d->%d: %.5f" % (idx, self.args.pred_len,
+#                                                                        grad_norms_per_timestep["backward"][idx].mean()))
+#                        else:
+#                            print ("Grad norm for H: %d->%d: %.5f" % (1, idx,
+#                                                                        grad_norms_per_timestep["forward"][idx].mean()))
+#                    exit()
 
                 preds.append(pred)
                 trues.append(true)
