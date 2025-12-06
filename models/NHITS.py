@@ -117,7 +117,7 @@ class NHITSBlock(nn.Module):
             hidden_layers.append(nn.Linear(in_features=layer[0], out_features=layer[1]))
             hidden_layers.append(activ)
 
-            if self.dropout_prob > 0:
+            if self.dropout_prob >= 0:
                 # raise NotImplementedError('dropout')
                 hidden_layers.append(nn.Dropout(p=self.dropout_prob))
 
