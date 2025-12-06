@@ -112,11 +112,13 @@ if __name__ == "__main__":
     plot_colors_per_model = np.array(plot_colors)[args.start_color_idx]
     
     # heatmap for CycleNet epochs curves
+    #"""
     import matplotlib as mpl
-    cmap = mpl.colormaps['OrRd'] #["BuPu"]
+    cmap = mpl.colormaps["OrRd"] #["BuPu"]
     # Take colors at regular intervals spanning the colormap.
-    colors = cmap(np.linspace(0.3, 1, 4))   
+    colors = cmap(np.linspace(0.3, 1, 5)) #4))   
     plot_colors_per_model = np.array(colors)[args.start_color_idx]
+    #"""
 
     for h in H:
 
@@ -212,8 +214,8 @@ if __name__ == "__main__":
                             values.append(float(line.split(": ")[-1]))
                     
                     p, = plt.plot(np.arange(0, len(values)), values, label=model, 
-                                    color=plot_colors_per_model[idx], linewidth=0.5) 
-                    plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors_per_model[idx], linestyle='--', linewidth=0.5) 
+                                    color=plot_colors_per_model[idx], linewidth=1) #0.5) 
+                    plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors_per_model[idx], linestyle='--', linewidth=1) #0.5) 
                     
                     if model == "SpaceTime":
                         if cutoff_type == "forward":
@@ -275,22 +277,22 @@ if __name__ == "__main__":
             if "autocorr" in args.mode:
                 autocorrs_gt = np.array(autocorrs_gt).mean(axis=0)
                 plt.plot(list(range(len(autocorrs_gt))), autocorrs_gt, label="Ground Truth", color="black", linestyle="dashdot")
-                plt.legend()
-                plt.xlabel("H=%d lags" % h)
-                plt.ylabel("Autocorrelation")
-                plt.title("Self attention models' ACF averages over the test set")
+                plt.legend(prop={"size": 10}, loc="best")
+                plt.xlabel("H=%d lags" % h, fontsize=10)
+                plt.ylabel("Autocorrelation", fontsize=10)
+                plt.title("Self attention models' ACF averages over the test set", fontsize=10)
                 plt.savefig("plots_/autocorrs_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
                 #plt.show()
                 plt.clf()
 
             if args.mode == "gradnorms":
                 plt.legend([tuple(plots[model]) for model in plots], list(plots.keys()),
-                        handler_map={tuple: HandlerTuple(ndivide=None)}, prop={"size": 6})#, loc="top") #loc='center right')
+                        handler_map={tuple: HandlerTuple(ndivide=None)}, prop={"size": 10}, loc="best") #6})#, loc="top")
 
         if args.mode == "gradnorms":
             ax_top = ax.twiny()
             ax_top.set_xticks([])
-            ax_top.set_xlabel("Anti-Causal Sub-Series: x→%d" % h)
+            ax_top.set_xlabel("Anti-Causal Sub-Series: x→%d" % h, fontsize=10)
 
 #            ax_top.set_xlim(ax.get_xlim())
 #            ax.set_xlabel("Forward [0→%d]" % h)
@@ -315,8 +317,8 @@ if __name__ == "__main__":
             
             #ax.set_ylim(top=0.009)
 
-            ax.set_xlabel("Causal Sub-Series: 0→x")
-            ax.set_ylabel("Gradient Norm Average")
+            ax.set_xlabel("Causal Sub-Series: 0→x", fontsize=10)
+            ax.set_ylabel("Gradient Norm Average", fontsize=10)
             plt.savefig("plots_/gradnorms_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
             
             #plt.show(); exit()
@@ -336,10 +338,11 @@ if __name__ == "__main__":
             for idx, model_name in enumerate(sorted(midpts_diff.keys())):
                 plt.plot(midpts_diff[model_name], min_y, marker='o', markersize=3, color=plot_colors_per_model[idx])
 
-            plt.legend(prop={"size": 6}, loc="best")
+            plt.legend(prop={"size": 10}, loc="best")
             #plt.title("Difference between forward and backward mode gradient norm averages")
-            plt.xlabel("Timestep h for subseries")
-            plt.ylabel("Difference at h [g(0→h) - g(h→%d)]" % h)
+            plt.xlabel("Timestep h for subseries", fontsize=10)
+            plt.ylabel("Difference at h [g(0→h) - g(h→%d)]" % h, fontsize=10)
+            plt.title("Differences plots over %d models" % len(args.models), fontsize=10)
             plt.savefig("plots_/gradnorms_%d_%s_diffs.pdf" % (h, "_".join(args.models)), dpi=300, bbox_inches="tight")
             plt.clf()
             
@@ -372,18 +375,33 @@ if __name__ == "__main__":
                 plots[k] = []
             
             fig, ax = plt.subplots()
-
+            
+            area_plts, legend_labels = [], []
             for idx, model in enumerate(poly_areas[cutoff_type].keys()):
                 plt.plot([0, len(poly_areas[cutoff_type][model])], [0, 0], color="black")
+                
+                area_plt_pair = []
                 for cutoff_type in types:
-                    plt.plot(np.arange(0, len(poly_areas[cutoff_type][model])),
-                            poly_areas[cutoff_type][model], label=model + "[%s→%s]" % (
-                                "0" if cutoff_type=="forward" else "x",
-                                "x" if cutoff_type=="forward" else str(len(poly_areas[cutoff_type][model]))), 
-                            color=plot_colors_per_model[idx],
-                            linestyle="dashed" if cutoff_type==types[1] else "dotted")
-    
-            plt.legend(prop={"size": 6})
+                    p, = plt.plot(np.arange(0, len(poly_areas[cutoff_type][model])),
+                               poly_areas[cutoff_type][model], label=model + "[%s→%s]" % (
+                                    "0" if cutoff_type=="forward" else "x",
+                                    "x" if cutoff_type=="forward" else str(len(poly_areas[cutoff_type][model]))), 
+                                color=plot_colors_per_model[idx],
+                                linestyle="dashed" if cutoff_type==types[1] else "dotted")
+                    area_plt_pair.append(p)
+                legend_labels.append(model)
+
+                area_plts.append(area_plt_pair)
+            
+            if len(area_plts) > 0:
+                markers = [tuple(m) for m in zip(*area_plts)]
+                min_max_idxs = [np.argmin(args.start_color_idx), np.argmax(args.start_color_idx)]
+                markers = [(m[min_max_idxs[0]],m[min_max_idxs[1]]) for m in markers]
+                legend_line_type = plt.legend(markers, ["Causal [0→x]", "Anti-Causal [x→H]"], prop={"size": 10}, loc=0,
+                                                handler_map={tuple: HandlerTuple(ndivide=None)})
+                legend_models = plt.legend([l[1] for l in area_plts], legend_labels, prop={"size": 10}, loc=6)
+                ax.add_artist(legend_line_type)
+                ax.add_artist(legend_models)
             
             #ax_top = ax.twiny()
             #ax_top.set_xlim(ax.get_xlim())
@@ -403,8 +421,9 @@ if __name__ == "__main__":
             
             #plt.ylim(top=0.75)
             
-            plt.xlabel("Timesteps")
-            plt.ylabel("Signed Area w.r.t line of proportionality")
+            plt.xlabel("Timesteps", fontsize=10)
+            plt.ylabel("Signed Area w.r.t line of proportionality", fontsize=10)
+            plt.title("Dotted Causal mode areas and Dashed Anti-Causal mode areas", fontsize=10)
             plt.savefig("plots_/gradnorms_%d_%s_areas.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
             #plt.show()
             plt.clf()
@@ -419,7 +438,7 @@ if __name__ == "__main__":
 
     label_plots = []
     for idx, k in enumerate(midpts_plot):
-        p, = plt.plot(H, midpts_plot[k], label=k, marker='o', color=plot_colors_per_model[idx], linewidth=0.5) 
+        p, = plt.plot(H, midpts_plot[k], label=k, marker='o', color=plot_colors_per_model[idx], linewidth=1) #0.5) 
         label_plots.append(p)
 
     for h in H:
@@ -428,13 +447,13 @@ if __name__ == "__main__":
     
     label_keys = list(midpts_plot.keys())
     label_keys.append("H/2 Line")
-    plt.legend(label_plots, label_keys, handler_map={tuple: HandlerTuple(ndivide=None)})
-    #plt.title("Gradient equivariance points over the horizon")
+    plt.legend(label_plots, label_keys, handler_map={tuple: HandlerTuple(ndivide=None)}, prop={"size": 10}, loc="best")
+    plt.title("Gradient equivariance points over %d models" % len(midpts_plot))
     
     plt.xticks(H, ["H=%d" % H[idx] for idx in range(len(H))])
     
-    plt.xlabel("Model Horizon Sizes")
-    plt.ylabel("Gradient Equivariant Timesteps")
+    plt.xlabel("Model Horizon Sizes", fontsize=10)
+    plt.ylabel("Timesteps in the Horizon", fontsize=10)
     plt.savefig("plots_/gradnorms_%d_%s_midpts.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
     #plt.show()
     
@@ -465,7 +484,7 @@ if __name__ == "__main__":
                          color=plot_colors[idx],
                          linestyle="dashed" if k=="backward" else "dotted")
             
-    plt.legend(prop={"size": 6})
+    plt.legend(prop={"size": 10}, loc="best")
     #ax_top = ax.twiny()
     #ax_top.set_xlim(ax.get_xlim())
     #ax.set_xlabel("Forward [0→%d]" % h)
@@ -473,15 +492,17 @@ if __name__ == "__main__":
     #reverse_ticks = list(reversed(ax.get_xticklabels()))
     #ax_top.set_xticklabels(reverse_ticks)
    
-    plt.title('_'.join(args.models))
-    plt.xlabel("Fraction of Horizon")
-    plt.ylabel("Fraction of gradient norm average")
+    plt.title("Interpolated area plots over %s H={96,192,336,720} models" % args.models[0], fontsize=10)
+    plt.xlabel("Fraction of Horizon", fontsize=10)
+    plt.ylabel("Fraction of gradient norm average", fontsize=10)
     plt.savefig("plots_/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=300, bbox_inches="tight")
 
     fig, ax = plt.subplots()
     plt.plot([0, 1], [0, 0], color="black")
 
-    print (len(areas), areas[0].keys(), areas[0]["forward"]); exit()
+    #print (len(areas), areas[0].keys(), areas[0]["forward"]); exit()
+    exit()
+
     # plot areas in a single 0-1 plot
     for idx, (h, area_dict) in enumerate(zip(H, areas)):
         maxs = {m: [] for m in area_dict["forward"].keys()}
@@ -506,7 +527,7 @@ if __name__ == "__main__":
                          color=plot_colors[idx],
                          linestyle="dashed" if k=="backward" else "dotted")
             
-    plt.legend(prop={"size": 6})
+    plt.legend(prop={"size": 10}, loc="best")
     #ax_top = ax.twiny()
     #ax_top.set_xlim(ax.get_xlim())
     #ax.set_xlabel("Forward [0→%d]" % h)
@@ -514,9 +535,9 @@ if __name__ == "__main__":
     #reverse_ticks = list(reversed(ax.get_xticklabels()))
     #ax_top.set_xticklabels(reverse_ticks)
    
-    plt.title('_'.join(args.models))
-    plt.xlabel("Fraction of Horizon")
-    plt.ylabel("Fraction of gradient norm average")
+    plt.title("Interpolated area plots over %s H={96,192,336,720} models" % args.models[0], fontsize=10)
+    plt.xlabel("Fraction of Horizon", fontsize=10)
+    plt.ylabel("Fraction of gradient norm average", fontsize=10)
     plt.savefig("plots_/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=300, bbox_inches="tight")
 
 if "SpaceTime" in args.models:
