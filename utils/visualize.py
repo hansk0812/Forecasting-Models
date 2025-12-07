@@ -36,6 +36,17 @@ def find_poly_area(coords, h):
     line_y = ((coords[-1][1]-coords[0][1])/float(coords[-1][0]-coords[0][0]))*line_x + coords[0][1]
     
     intersection_pts = np.argwhere(np.diff(np.sign(poly[:-1,1]-line_y))).flatten().tolist()
+    
+    if len(intersection_pts) > 1 and h!=1:
+        prev_idx = 0
+        remove = []
+        for idx in range(1, len(intersection_pts)):
+            if intersection_pts[prev_idx] == intersection_pts[idx]-1:
+                remove.append(prev_idx)
+            prev_idx = idx
+        
+        for r in reversed(remove):
+            del intersection_pts[r]
 
     if len(intersection_pts) > 0:
         if intersection_pts[-1] == index - 1:
@@ -49,7 +60,7 @@ def find_poly_area(coords, h):
                 intersection_pts += [index]
     else:
         intersection_pts = [0, index]
-
+    
     polys, poly_adds = [], []
     for idx in range(len((intersection_pts))-1):
         p = poly[intersection_pts[idx]:intersection_pts[idx+1]+1,:].tolist()
@@ -77,7 +88,7 @@ def find_poly_area(coords, h):
                 signs.append(line_y[p.shape[0]//2] < p[p.shape[0]//2,1])
         else:
             signs.append(not signs[-1])
-
+    
     return_area = 0
     for p, sign in zip(polys, signs):
         
@@ -112,7 +123,7 @@ if __name__ == "__main__":
     plot_colors_per_model = np.array(plot_colors)[args.start_color_idx]
     
     # heatmap for CycleNet epochs curves
-    #"""
+    """
     import matplotlib as mpl
     cmap = mpl.colormaps["OrRd"] #["BuPu"]
     # Take colors at regular intervals spanning the colormap.
