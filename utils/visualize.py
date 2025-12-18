@@ -1,7 +1,10 @@
+import matplotlib.colors as mcolors
 from matplotlib import pyplot as plt
 from matplotlib.legend_handler import HandlerTuple
+from matplotlib.transforms import Bbox
 from collections import OrderedDict
 
+import traceback
 import argparse
 
 import os
@@ -83,11 +86,12 @@ def find_poly_area(coords, h):
     
     signs = []
     for idx, p in enumerate(polys):
-        if idx == 0 or len(signs) == 0:
+        if idx == 0:
             if line_y[p.shape[0]//2] != p[p.shape[0]//2,1]:
-                signs.append(line_y[p.shape[0]//2] < p[p.shape[0]//2,1])
+                signs.append((line_y[p.shape[0]//2] - p[p.shape[0]//2,1])<1e-4)
         else:
-            signs.append(not signs[-1])
+                signs.append((line_y[p.shape[0]//2] - p[p.shape[0]//2,1])<1e-4)
+                #signs.append(not signs[-1])
     
     return_area = 0
     for p, sign in zip(polys, signs):
@@ -96,25 +100,46 @@ def find_poly_area(coords, h):
         x, y = p[:,0], p[:,1]
         return_area += (2*sign-1)*(0.5*np.abs(np.dot(x,np.roll(y,1))-np.dot(y,np.roll(x,1))))/2 #shoelace algorithm
     
-    return return_area
+    return return_area, intersection_pts
+
+def create_rgb_colormap(color, factor=0.5, ncolors=10):
+
+    hex_color = mcolors.to_hex(color)
+    r, g, b = int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16)
+
+    lighter_shade = [min(r+r*factor, 255),
+                     min(g+g*factor, 255),
+                     min(b+b*factor, 255)]
+    
+    scale = np.arange(0, 1, 1./ncolors)
+    
+    colors = []
+    for s in scale:
+        color_r = min(int(r + (lighter_shade[0] - r)*s), 255)
+        color_g = min(int(g + (lighter_shade[1] - g)*s), 255)
+        color_b = min(int(b + (lighter_shade[2] - b)*s), 255)
+        
+        color_hex = mcolors.to_hex((color_r/255., color_g/255., color_b/255.))
+        colors.append(color_hex)
+
+    return list(reversed(colors))
 
 if __name__ == "__main__":
     
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", help="[gradnorms, autocorr=horizon/nlags]", default="autocorr=1")
+    ap.add_argument("mode", help="[gradnorms, autocorr=horizon/nlags, batchsizes=(timestep1, timestep2,...)]", default="autocorr=1")
     ap.add_argument("folder", help="logs/gradnorms or logs/autocorr folder", default=None)
     ap.add_argument("--models", nargs='+', help="Models to include in visualization. Ignore for all available models.", default=None)
     ap.add_argument("--start_color_idx", default=[0], nargs='+', help="Color idx for single color per model", type=int)
     args = ap.parse_args()
 
-    assert args.mode == "gradnorms" or "autocorr" in args.mode
+    assert args.mode == "gradnorms" or any([x in args.mode for x in ["autocorr", "batchsizes"]])
 
     H = [96, 192, 336, 720]
     
     plots = OrderedDict()
     
     # select a few colors
-    #import matplotlib.colors as mcolors
     #plot_colors = list(mcolors._colors_full_map.values())
     #random.shuffle(plot_colors)
     
@@ -125,14 +150,97 @@ if __name__ == "__main__":
     # heatmap for CycleNet epochs curves
     """
     import matplotlib as mpl
-    cmap = mpl.colormaps["OrRd"] #["BuPu"]
+    cmap = mpl.colormaps["BuPu"] #["OrRd"]
     # Take colors at regular intervals spanning the colormap.
     colors = cmap(np.linspace(0.3, 1, 5)) #4))   
     plot_colors_per_model = np.array(colors)[args.start_color_idx]
     #"""
-
+    
     for h in H:
+        
+        if "batchsizes" in args.mode:
+            
+            timesteps = [int(x.strip()) for x in args.mode.split('=')[-1][1:-1].split(',')]
+            timesteps_h = [x for x in timesteps if x <= h]
+            fig = plt.figure()
+            ax = fig.add_subplot(1, 1, 1, projection='3d')
+            
+            if not all([
+                os.path.exists(os.path.join(args.folder, "%s_%d_%d_batchsizes.txt" % (model, timestep, h))) \
+                        for model in args.models for timestep in timesteps]):
+                continue
+            
+            plots = []
+            for idx, model in enumerate(args.models):
+                model_plots = []
+                for jdx, timestep in enumerate(timesteps_h):
+                    if jdx == 0:
+                        x1, y1, z1 = None, None, None
+                    else:
+                        x1, y1, z1 = xs, ys, [timesteps_h[jdx-1]]
 
+                    with open(os.path.join(args.folder, "%s_%d_%d_batchsizes.txt" % (model, timestep, h)), 'r') as f:
+                        xy = [x.strip() for x in f.readlines() if x != ""]
+                        
+                        xs = [int(x.split(':')[0]) for x in xy]
+                        ys = [float(x.split(": ")[-1]) for x in xy]
+                        
+                        timestep_factor = timestep / timesteps_h[-1]
+                        
+                        max_y = max(ys)
+                        ys = [y/max(ys) for x, y in zip(xs, ys)]
+                        #ys = [(y*x**1.1)/max(ys) for x, y in zip(xs, ys)]
+                        #ys = [(y*x**1.5*timestep_factor**0.1 * np.cos(timestep/y))/max(ys) for x, y in zip(xs, ys)]
+                        
+                      
+                        if jdx > 0:
+                            ax.fill_between(x1, y1, z1, xs, ys, [timestep], alpha=0.8, edgecolor=plot_colors_per_model[idx],
+                                            facecolors=create_rgb_colormap(plot_colors_per_model[idx], 0.4, len(xs)-1))
+                        
+                        model_label = model
+                        #model_label = "%s (Scale = %.5f)" % (model, max(ys))
+                        p, = ax.plot(xs, ys, zs=timestep, label=model_label, color=plot_colors_per_model[idx])
+
+                        bbox_props = dict(boxstyle="round,pad=0.1", fc="cyan", ec="b", lw=1)
+                        ax.text(xs[-1]+200, min(ys) - min(0.05, min(ys))*min(ys), timestep+10, "S=%.3f" % max_y, ha='center', va='baseline', 
+                                    fontsize=4, bbox=bbox_props, in_layout=True) #-min(ys)*min(ys)
+ 
+                        model_plots.append(p)
+                    plots.append(tuple(model_plots))
+
+            #ax.set_xlim(0, 1)
+            #ax.set_ylim(0, 1)
+            #ax.set_zlim(0, 1)
+            
+            ax.view_init(elev=20., azim=45, roll=0)
+
+            plt.legend(plots, args.models, loc=(0.4, 0.25), handler_map={tuple: HandlerTuple(ndivide=None)})
+            
+            plt.xlabel("Batch Size", labelpad=-3)
+            plt.ylabel("Interpolated Gradnorm Avg", labelpad=-5)
+            ax.set_zlabel("Timestep", in_layout=True, verticalalignment="baseline", labelpad=0.5)
+            plt.title("Gradnorm averages by batch sizes per model", y=0.87, x=0.45)
+            
+            plt.tick_params(axis='y', which="both", pad=-2)
+            plt.tick_params(axis='x', which="both", pad=-2)
+
+            bbox = fig.get_tightbbox()
+            bbox_pts = bbox.get_points()
+            bbox_pts[0][0] -= bbox_pts[0][0]*0.11
+            bbox_pts[1][0] -= bbox_pts[1][0]*0.017
+            bbox_pts[0][1] += bbox_pts[0][1]*0.1
+            bbox_pts[1][1] -= bbox_pts[1][1]*0.105
+            bbox = Bbox(bbox_pts)
+            
+            plt.savefig("plots_/gradnorms_%s_%d_batchsizes.pdf" % ('_'.join(args.models), h), dpi=300, bbox_inches=bbox)
+            
+            plt.clf()
+
+            if timesteps[-1] == h:
+                exit()
+
+            continue
+            
         fnames_forward = sorted(glob.glob(os.path.join(args.folder, "*_%d_%s_%s.txt" % (
             h, "forward", args.mode))))
         fnames_backward = [x.replace("forward", "backward") for x in fnames_forward]
@@ -183,7 +291,8 @@ if __name__ == "__main__":
             autocorrs_gt = []
         else:
             poly_areas = OrderedDict({k: {} for k in types})
-        
+            poly_areas_pts = OrderedDict({k: {} for k in types})
+
         plot_diffs = {}
         for cutoff_type in types:
             
@@ -216,7 +325,7 @@ if __name__ == "__main__":
                     with open(fname, 'r') as f:
                         values = []
                         for line in f.readlines():
-                            if model.lower() == "spacetime" and "Gra " in line:
+                            if "spacetime" in model.lower() and "Gra " in line:
                                 pt = float(line.split(": ")[-1])
                                 loss_based_weights[h][cutoff_type].append(pt)
                             
@@ -228,7 +337,7 @@ if __name__ == "__main__":
                                     color=plot_colors_per_model[idx], linewidth=1) #0.5) 
                     plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors_per_model[idx], linestyle='--', linewidth=1) #0.5) 
                     
-                    if model == "SpaceTime":
+                    if "SpaceTime" in model:
                         if cutoff_type == "forward":
                             text = "H=%s: %.5f\n" % ("0  " if h < 100 else "0    ", loss_based_weights[h][cutoff_type][0])
                         else:
@@ -249,7 +358,13 @@ if __name__ == "__main__":
                     for h_ in range(1, h+1):
                         #plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors[idx], linestyle='--')
                         #plt.plot(list(range(h_)), values[:h_], color=plot_colors[idx], linestyle='--')
-                        poly_areas[cutoff_type][model].append(find_poly_area(pts, h_))
+                        return_area, intersect_pts = find_poly_area(pts, h_)
+                        poly_areas[cutoff_type][model].append(return_area)
+                    
+                    if len(intersect_pts) > 2:
+                        poly_areas_pts[cutoff_type][model] = intersect_pts[1:-1]
+                    else:
+                        poly_areas_pts[cutoff_type][model] = []
 
                     if len(midpts[model]) == 0:
                         midpts[model].append(np.array(values))
@@ -337,18 +452,28 @@ if __name__ == "__main__":
             plt.clf()
             min_y, midpts_diff = np.inf, {}
             plt.plot(list(range(h+1)), np.arange(-1, 1, 2./(h+1)), linestyle="--", color='black', label="Uniform Differences Line")
+            plt.plot([0, h], [0, 0], color='black')
+          
             for idx, model_name in enumerate(sorted(plot_diffs.keys())):
-                print ("diffs: %s" % model_name)
                 diff = np.array(plot_diffs[model_name]["forward"]) - np.array(plot_diffs[model_name]["backward"])
                 diff /= diff.max()
-                plt.plot(list(range(len(diff))), diff, label=model_name, color=plot_colors_per_model[idx])
+                #plt.plot(list(range(len(diff))), diff, label=model_name, color=plot_colors_per_model[idx])
                 
                 min_y = np.min(np.array([min_y, diff.min()]))
                 midpts_diff[model_name] = np.abs(diff).argmin()
-            
+             
             for idx, model_name in enumerate(sorted(midpts_diff.keys())):
                 plt.plot(midpts_diff[model_name], min_y, marker='o', markersize=3, color=plot_colors_per_model[idx])
+                #plt.plot([midpts_diff[model_name], midpts_diff[model_name]], [-1, 1], color=plot_colors_per_model[idx], alpha=0.35)
+                
+                plt.plot([midpts_diff[model_name], h], [0, 1], linestyle="--", color=plot_colors_per_model[idx], alpha=0.35)
+                plt.plot([0, midpts_diff[model_name]], [-1, 0], linestyle="--", color=plot_colors_per_model[idx], alpha=0.35)
 
+            for idx, model_name in enumerate(sorted(plot_diffs.keys())):
+                diff = np.array(plot_diffs[model_name]["forward"]) - np.array(plot_diffs[model_name]["backward"])
+                diff /= diff.max()
+                plt.plot(list(range(len(diff))), diff, label=model_name, color=plot_colors_per_model[idx])
+            
             plt.legend(prop={"size": 10}, loc="best")
             #plt.title("Difference between forward and backward mode gradient norm averages")
             plt.xlabel("Timestep h for subseries", fontsize=10)
@@ -400,15 +525,31 @@ if __name__ == "__main__":
                                 color=plot_colors_per_model[idx],
                                 linestyle="dashed" if cutoff_type==types[1] else "dotted")
                     area_plt_pair.append(p)
+            
+                    try:
+                        point_plts = []
+                        if len(poly_areas_pts[cutoff_type][model]) > 0:
+                            for pt in poly_areas_pts[cutoff_type][model]:
+                                p, = plt.plot(pt, poly_areas[cutoff_type][model][pt], 'o', markersize=3, 
+                                                color=plot_colors_per_model[idx], label="Intersection with Line of Proportionality")
+                                point_plts.append(p)
+                    except Exception:
+                        traceback.print_exc()
+                        pass
+                
                 legend_labels.append(model)
 
                 area_plts.append(area_plt_pair)
             
-            if len(area_plts) > 0:
+            if len(area_plts) > 0 and len(area_plts) == len(args.models):
                 markers = [tuple(m) for m in zip(*area_plts)]
                 min_max_idxs = [np.argmin(args.start_color_idx), np.argmax(args.start_color_idx)]
                 markers = [(m[min_max_idxs[0]],m[min_max_idxs[1]]) for m in markers]
-                legend_line_type = plt.legend(markers, ["Causal [0→x]", "Anti-Causal [x→H]"], prop={"size": 10}, loc=0,
+                if len(point_plts) > 0:
+                    markers.append(tuple(point_plts))
+                legend_line_type = plt.legend(markers, ["Causal [0→x]", "Anti-Causal [x→H]"] if len(point_plts)==0 \
+                                                    else ["Causal [0→x]", "Anti-Causal [x→H]", "Intersection with Line of Proportionality"],
+                                                prop={"size": 10}, loc=0,
                                                 handler_map={tuple: HandlerTuple(ndivide=None)})
                 legend_models = plt.legend([l[1] for l in area_plts], legend_labels, prop={"size": 10}, loc=6)
                 ax.add_artist(legend_line_type)
@@ -446,31 +587,37 @@ if __name__ == "__main__":
         exit()
 
     plt.clf()
-
+    
+    midpts_flag = True
     label_plots = []
     for idx, k in enumerate(midpts_plot):
+        if len(midpts_plot[k]) != 4:
+            midpts_flag = False
+            break
         p, = plt.plot(H, midpts_plot[k], label=k, marker='o', color=plot_colors_per_model[idx], linewidth=1) #0.5) 
         label_plots.append(p)
-
-    for h in H:
-        p, = plt.plot([3*h/4, 5*h/4], [h/2, h/2], linestyle="--", color='black', label="H/2 Line")
-        label_plots.append(p)
     
-    label_keys = list(midpts_plot.keys())
-    label_keys.append("H/2 Line")
-    plt.legend(label_plots, label_keys, handler_map={tuple: HandlerTuple(ndivide=None)}, prop={"size": 10}, loc="best")
-    plt.title("Gradient equivariance points over %d models" % len(midpts_plot))
+    if midpts_flag:
     
-    plt.xticks(H, ["H=%d" % H[idx] for idx in range(len(H))])
-    
-    plt.xlabel("Model Horizon Sizes", fontsize=10)
-    plt.ylabel("Timesteps in the Horizon", fontsize=10)
-    plt.savefig("plots_/gradnorms_%d_%s_midpts.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
-    #plt.show()
+        for h in H:
+            p, = plt.plot([3*h/4, 5*h/4], [h/2, h/2], linestyle="--", color='black', label="H/2 Line")
+            label_plots.append(p)
+        
+        label_keys = list(midpts_plot.keys())
+        label_keys.append("H/2 Line")
+        plt.legend(label_plots, label_keys, handler_map={tuple: HandlerTuple(ndivide=None)}, prop={"size": 10}, loc="best")
+        plt.title("Gradient equivariance points over %d models" % len(midpts_plot))
+        
+        plt.xticks(H, ["H=%d" % H[idx] for idx in range(len(H))])
+        
+        plt.xlabel("Model Horizon Sizes", fontsize=10)
+        plt.ylabel("Timesteps in the Horizon", fontsize=10)
+        plt.savefig("plots_/gradnorms_%d_%s_midpts.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
+        #plt.show()
     
     fig, ax = plt.subplots()
     plt.plot([0, 1], [0, 0], color="black")
-
+    
     # plot areas in a single 0-1 plot
     for idx, (h, area_dict) in enumerate(zip(H, areas)):
         maxs = {m: [] for m in area_dict["forward"].keys()}
@@ -507,49 +654,51 @@ if __name__ == "__main__":
     plt.xlabel("Fraction of Horizon", fontsize=10)
     plt.ylabel("Fraction of gradient norm average", fontsize=10)
     plt.savefig("plots_/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=300, bbox_inches="tight")
+    
+    # Plot interpolated area plot for H=720 model only!
+    if not areas[0]["forward"] and not areas[1]["forward"] and not areas[2]["forward"]:
+    
+        fig, ax = plt.subplots()
+        plt.plot([0, 1], [0, 0], color="black")
 
-    fig, ax = plt.subplots()
-    plt.plot([0, 1], [0, 0], color="black")
-
-    #print (len(areas), areas[0].keys(), areas[0]["forward"]); exit()
-    exit()
-
-    # plot areas in a single 0-1 plot
-    for idx, (h, area_dict) in enumerate(zip(H, areas)):
-        maxs = {m: [] for m in area_dict["forward"].keys()}
-        for k in area_dict:
-            for m in area_dict[k]:
-                area_dict[k][m] = np.array(area_dict[k][m])
-                #mask = (area_dict[k][m]>0).astype(np.int32)
-                #area_plot = np.sqrt(area_dict[k][m]*mask)
-                #area_plot += -np.sqrt(-area_dict[k][m]*(1-mask))
-                #area_plot /= np.sqrt(float(h))
-                area_dict[k][m] = area_dict[k][m] / h
-                maxs[m].append(max(area_dict[k][m].max(), (-area_dict[k][m]).max()))
-        for k in area_dict:
-            for m in area_dict[k]:
-                l = "[ %s  →  %s ]" % (
-                        "0".rjust(9) if k=="forward" else ("x*%d"%h).rjust(6 if h>100 else 7), 
-                        ("%d"%h).rjust(6 if h>100 else 7) if k=="backward" else ("x*%d"%h).rjust(5 if h>100 else 6))
-                
-                plt.plot(np.arange(0, 1, 1/len(area_dict[k][m])), 
-                         area_dict[k][m]/max(maxs[m]), 
-                         label=l, 
-                         color=plot_colors[idx],
-                         linestyle="dashed" if k=="backward" else "dotted")
+        # plot areas in a single 0-1 plot
+        for idx, (h, area_dict) in enumerate(zip(H, areas)):
+            maxs = {m: [] for m in area_dict["forward"].keys()}
+            for k in area_dict:
+                for m in area_dict[k]:
+                    area_dict[k][m] = np.array(area_dict[k][m])
+                    #mask = (area_dict[k][m]>0).astype(np.int32)
+                    #area_plot = np.sqrt(area_dict[k][m]*mask)
+                    #area_plot += -np.sqrt(-area_dict[k][m]*(1-mask))
+                    #area_plot /= np.sqrt(float(h))
+                    area_dict[k][m] = area_dict[k][m] / h
+                    maxs[m].append(max(area_dict[k][m].max(), (-area_dict[k][m]).max()))
             
-    plt.legend(prop={"size": 10}, loc="best")
-    #ax_top = ax.twiny()
-    #ax_top.set_xlim(ax.get_xlim())
-    #ax.set_xlabel("Forward [0→%d]" % h)
-    #ax_top.set_xlabel("Backward [%d→0]" % h)
-    #reverse_ticks = list(reversed(ax.get_xticklabels()))
-    #ax_top.set_xticklabels(reverse_ticks)
-   
-    plt.title("Interpolated area plots over %s H={96,192,336,720} models" % args.models[0], fontsize=10)
-    plt.xlabel("Fraction of Horizon", fontsize=10)
-    plt.ylabel("Fraction of gradient norm average", fontsize=10)
-    plt.savefig("plots_/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=300, bbox_inches="tight")
+            plots_legend = [[] for _ in range(len(area_dict["forward"]))]
+            for k in area_dict:
+                for jdx, m in enumerate(area_dict[k]):
+                    p, = plt.plot(np.arange(0, 1, 1/len(area_dict[k][m])), 
+                                  area_dict[k][m]/max(maxs[m]), 
+                                  label=m, 
+                                  color=plot_colors_per_model[jdx],
+                                  linestyle="dashed" if k=="backward" else "dotted")
+                    plots_legend[jdx].append(p)
+
+        plots_legend = [tuple(x) for x in plots_legend]
+        plt.legend(plots_legend, area_dict["forward"], prop={"size": 10}, loc="best",
+                   handler_map={tuple: HandlerTuple(ndivide=None)})
+
+        #ax_top = ax.twiny()
+        #ax_top.set_xlim(ax.get_xlim())
+        #ax.set_xlabel("Forward [0→%d]" % h)
+        #ax_top.set_xlabel("Backward [%d→0]" % h)
+        #reverse_ticks = list(reversed(ax.get_xticklabels()))
+        #ax_top.set_xticklabels(reverse_ticks)
+       
+        plt.title("Interpolated area plot over %s models" % ", ".join(args.models), fontsize=10)
+        plt.xlabel("Fraction of Horizon", fontsize=10)
+        plt.ylabel("Fraction of gradient norm average", fontsize=10)
+        plt.savefig("plots_/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=300, bbox_inches="tight")
 
 if "SpaceTime" in args.models:
     for h in H:
