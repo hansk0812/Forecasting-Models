@@ -83,22 +83,22 @@ def find_poly_area(coords, h):
             else:
                 poly_adds.append(0)
         polys.append(np.array(p))
-    
-    signs = []
+
+    signs, right_pts = [], 0
     for idx, p in enumerate(polys):
-        if idx == 0:
-            if line_y[p.shape[0]//2] != p[p.shape[0]//2,1]:
-                signs.append((line_y[p.shape[0]//2] - p[p.shape[0]//2,1])<1e-4)
-        else:
-                signs.append((line_y[p.shape[0]//2] - p[p.shape[0]//2,1])<1e-4)
-                #signs.append(not signs[-1])
+        polygon_midpt = int(p[0][0]) + p.shape[0]//2
+        sign_pt = min(polygon_midpt, int(p[-1][0]-p[0][0])-1)
+        signs.append((line_y[sign_pt] - p[sign_pt, 1])<1e-4)
     
     return_area = 0
+    areas = []
     for p, sign in zip(polys, signs):
         
         # coords: np.array([[x_i,y_i],...])
         x, y = p[:,0], p[:,1]
-        return_area += (2*sign-1)*(0.5*np.abs(np.dot(x,np.roll(y,1))-np.dot(y,np.roll(x,1))))/2 #shoelace algorithm
+        area = (2*sign-1)*(0.5*np.abs(np.dot(x,np.roll(y,1))-np.dot(y,np.roll(x,1))))/2 #shoelace algorithm
+        return_area += area
+        areas.append(area)
     
     return return_area, intersection_pts
 
@@ -148,9 +148,9 @@ if __name__ == "__main__":
     plot_colors_per_model = np.array(plot_colors)[args.start_color_idx]
     
     # heatmap for CycleNet epochs curves
-    """
+    #"""
     import matplotlib as mpl
-    cmap = mpl.colormaps["BuPu"] #["OrRd"]
+    cmap = mpl.colormaps["OrRd"] #["BuPu"]
     # Take colors at regular intervals spanning the colormap.
     colors = cmap(np.linspace(0.3, 1, 5)) #4))   
     plot_colors_per_model = np.array(colors)[args.start_color_idx]
