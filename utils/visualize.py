@@ -98,7 +98,7 @@ if __name__ == "__main__":
     ap.add_argument("--start_color_idx", default=[0], nargs='+', help="Color idx for single color per model", type=int)
     args = ap.parse_args()
 
-    assert args.mode == "gradnorms" or "autocorr" in args.mode
+    assert "gradnorms" in args.mode or "autocorr" in args.mode
 
     H = [96, 192, 336, 720]
     
@@ -160,7 +160,7 @@ if __name__ == "__main__":
             #with open(f_b, 'w') as f:
             #    f.writelines(lines_b)
     
-    types = ["forward", "backward"] if args.mode == "gradnorms" else [str(h) for h in H]
+    types = ["forward", "backward"] if "gradnorms" in args.mode else [str(h) for h in H]
     loss_based_weights = {h: {c: [] for c in types} for h in H}
 
     # midpoints
@@ -189,7 +189,7 @@ if __name__ == "__main__":
                     del fnames[idx]
             
             if len(fnames) == 0:
-                print ("H=%d files not found!" % h if args.mode == "gradnorms" else int(h/int(cutoff_type))); continue #exit()
+                print ("H=%d files not found!" % h if "gradnorms" in args.mode else int(h/int(cutoff_type))); continue #exit()
             
             fnames = sorted(fnames, key=lambda x: x.split('/')[-1].split(".pdf")[0])
             print (fnames)
@@ -199,29 +199,61 @@ if __name__ == "__main__":
                 if not model in plot_diffs:
                     plot_diffs[model] = {}
 
-                if args.mode == "gradnorms":
+                if "gradnorms" in args.mode:
 
                     if not model in plots:
                         plots[model] = []
                         midpts[model] = []
                     with open(fname, 'r') as f:
-                        values = []
-                        for line in f.readlines():
+                        values, min_idx = [], 1e7
+                        for jdx, line in enumerate(f.readlines()):
                             if model.lower() == "spacetime" and "Gra " in line:
                                 pt = float(line.split(": ")[-1])
                                 loss_based_weights[h][cutoff_type].append(pt)
                             
                             if not "Grad " in line:
                                 continue
-                            values.append(float(line.split(": ")[-1]))
+                            
+                            gradnorm_str = line.split(": ")[-1]
+                            if not '=' in gradnorm_str:
+                                values.append(float(gradnorm_str))
+                            else:
+                                if jdx < min_idx:
+                                    min_idx = jdx
+                                    keys = [x.split('=')[0] for x in gradnorm_str.split(' ')]
+                                values.append([x.split('=')[1] for x in gradnorm_str.split(' ')])
                     
                     if len(values) != h + 1:
-                        x_range = np.arange(0, h+1, np.round(h, -2)/(len(values)-2)).tolist() + [h]
-                        print (x_range)
-                        values_spline = make_interp_spline(x_range, values)
-                        X = np.linspace(0, h+1, h+2)
-                        values = values_spline(X)
-
+                        if isinstance(values[0], float):
+                            x_range = np.arange(0, h+1, np.round(h, -2)/(len(values)-2)).tolist() + [h]
+                            values_spline = make_interp_spline(x_range, values)
+                            X = np.linspace(0, h+1, h+2)
+                            values = values_spline(X)
+                        else:
+                            values = np.array(values)
+                            values_interpolated = []
+                            for jdx in range(len(values[0])):
+                                x_range = np.arange(0, h+1, np.round(h, -2)/(len(values[:,jdx])-2)).tolist() + [h]
+                                values_spline = make_interp_spline(x_range, values[:,jdx])
+                                X = np.linspace(0, h+1, h+2)
+                                values_interpolated.append(values_spline(X))
+                            values = values_interpolated
+                    
+                    if '=' in args.mode:
+                        if '(' in args.mode:
+                            values_new = []
+                            for key in [x.strip() for x in args.mode.split('=')[-1][1:-1].split(',')]:
+                                key_idx = keys.index(key)
+                                values_new.append(values[key_idx])
+                            values = values_new
+                        else:
+                            key = args.mode.split('=')[-1]
+                            key_idx = keys.index(key)
+                            values = values[key_idx]
+                    
+                    if not isinstance(values[0], float):
+                        values = np.array(values).mean(dim=0)
+                    
                     p, = plt.plot(np.arange(0, len(values)), values, label=model, 
                                     color=plot_colors_per_model[idx], linewidth=1) #0.5) 
                     plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors_per_model[idx], linestyle='--', linewidth=1) #0.5) 
@@ -294,11 +326,11 @@ if __name__ == "__main__":
                 #plt.show()
                 plt.clf()
 
-            if args.mode == "gradnorms":
+            if "gradnorms" in args.mode:
                 plt.legend([tuple(plots[model]) for model in plots], list(plots.keys()),
                         handler_map={tuple: HandlerTuple(ndivide=None)}, prop={"size": 10}, loc="best") #6})#, loc="top")
 
-        if args.mode == "gradnorms":
+        if "gradnorms" in args.mode:
             ax_top = ax.twiny()
             ax_top.set_xticks([])
             ax_top.set_xlabel("Anti-Causal Sub-Series: x→%d" % h, fontsize=10)
@@ -328,7 +360,15 @@ if __name__ == "__main__":
 
             ax.set_xlabel("Causal Sub-Series: 0→x", fontsize=10)
             ax.set_ylabel("Gradient Norm Average", fontsize=10)
-            plt.savefig("plots_/gradnorms_%d_%s.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
+
+            if '=' in args.mode:
+                if '(' in args.mode:
+                    gradnorms_str = "gradnorms_" + '_'.join([x.strip() for x in args.mode.split('=')[1:-1].split(',')])
+                else:
+                    gradnorms_str = "gradnorms_" + args.mode.split('=')[-1]
+            else:
+                gradnorms_str = "gradnorms"
+            plt.savefig("plots_/%s_%d_%s.pdf" % (gradnorms_str, h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
             
             #plt.show(); exit()
             
@@ -352,7 +392,15 @@ if __name__ == "__main__":
             plt.xlabel("Timestep h for subseries", fontsize=10)
             plt.ylabel("Difference at h [g(0→h) - g(h→%d)]" % h, fontsize=10)
             plt.title("Differences plots over %d models" % len(args.models), fontsize=10)
-            plt.savefig("plots_/gradnorms_%d_%s_diffs.pdf" % (h, "_".join(args.models)), dpi=300, bbox_inches="tight")
+            
+            if '=' in args.mode:
+                if '(' in args.mode:
+                    gradnorms_str = "gradnorms_" + '_'.join([x.strip() for x in args.mode.split('=')[1:-1].split(',')])
+                else:
+                    gradnorms_str = "gradnorms_" + args.mode.split('=')[-1]
+            else:
+                gradnorms_str = "gradnorms"
+            plt.savefig("plots_/%s_%d_%s_diffs.pdf" % (gradnorms_str, h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
             plt.clf()
             
             """
@@ -433,14 +481,22 @@ if __name__ == "__main__":
             plt.xlabel("Timesteps", fontsize=10)
             plt.ylabel("Signed Area w.r.t line of proportionality", fontsize=10)
             plt.title("Dotted Causal mode areas and Dashed Anti-Causal mode areas", fontsize=10)
-            plt.savefig("plots_/gradnorms_%d_%s_areas.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
+            
+            if '=' in args.mode:
+                if '(' in args.mode:
+                    gradnorms_str = "gradnorms_" + '_'.join([x.strip() for x in args.mode.split('=')[1:-1].split(',')])
+                else:
+                    gradnorms_str = "gradnorms_" + args.mode.split('=')[-1]
+            else:
+                gradnorms_str = "gradnorms"
+            plt.savefig("plots_/%s_%d_%s_areas.pdf" % (gradnorms_str, h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
             #plt.show()
             plt.clf()
 
             areas.append(poly_areas)
         #areas.append(poly_areas)
 
-    if args.mode != "gradnorms":
+    if not "gradnorms" in args.mode:
         exit()
 
     plt.clf()
@@ -463,7 +519,15 @@ if __name__ == "__main__":
     
     plt.xlabel("Model Horizon Sizes", fontsize=10)
     plt.ylabel("Timesteps in the Horizon", fontsize=10)
-    plt.savefig("plots_/gradnorms_%d_%s_midpts.pdf" % (h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
+    
+    if '=' in args.mode:
+        if '(' in args.mode:
+            gradnorms_str = "gradnorms_" + '_'.join([x.strip() for x in args.mode.split('=')[1:-1].split(',')])
+        else:
+            gradnorms_str = "gradnorms_" + args.mode.split('=')[-1]
+    else:
+        gradnorms_str = "gradnorms"
+    plt.savefig("plots_/%s_%d_%s_midpts.pdf" % (gradnorms_str, h, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
     #plt.show()
     
     fig, ax = plt.subplots()
@@ -504,7 +568,15 @@ if __name__ == "__main__":
     plt.title("Interpolated area plots over %s H={96,192,336,720} models" % args.models[0], fontsize=10)
     plt.xlabel("Fraction of Horizon", fontsize=10)
     plt.ylabel("Fraction of gradient norm average", fontsize=10)
-    plt.savefig("plots_/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=300, bbox_inches="tight")
+    
+    if '=' in args.mode:
+        if '(' in args.mode:
+            gradnorms_str = "gradnorms_" + '_'.join([x.strip() for x in args.mode.split('=')[1:-1].split(',')])
+        else:
+            gradnorms_str = "gradnorms_" + args.mode.split('=')[-1]
+    else:
+        gradnorms_str = "gradnorms"
+    plt.savefig("plots_/%s_%s_areas.pdf" % (gradnorms_str, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
 
     fig, ax = plt.subplots()
     plt.plot([0, 1], [0, 0], color="black")
@@ -547,7 +619,14 @@ if __name__ == "__main__":
     plt.title("Interpolated area plots over %s H={96,192,336,720} models" % args.models[0], fontsize=10)
     plt.xlabel("Fraction of Horizon", fontsize=10)
     plt.ylabel("Fraction of gradient norm average", fontsize=10)
-    plt.savefig("plots_/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=300, bbox_inches="tight")
+    if '=' in args.mode:
+        if '(' in args.mode:
+            gradnorms_str = "gradnorms_" + '_'.join([x.strip() for x in args.mode.split('=')[1:-1].split(',')])
+        else:
+            gradnorms_str = "gradnorms_" + args.mode.split('=')[-1]
+    else:
+        gradnorms_str = "gradnorms"
+    plt.savefig("plots_/%s_%s_areas.pdf" % (gradnorms_str, "all_models" if args.models is None else "_".join(sorted(args.models))), dpi=300, bbox_inches="tight")
 
 if "SpaceTime" in args.models:
     for h in H:

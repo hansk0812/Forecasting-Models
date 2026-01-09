@@ -14,8 +14,11 @@ from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
 
 from models import FEDformer, Autoformer, Informer, Transformer
+from models import AutoformerSansRoll
 from models import DLinear, NLinear, NHITS, TiDE, NBEATS, FiLM
+from models import NLinearSansNorm
 from models import Pyraformer, Triformer
+from models import PyraformerSansMask, PyraformerOppMask, PyraformerEncoderOppMask
 from models import xLSTM_TS
 from models import SpaceTime
 from models import MultiResolutionDDPM
@@ -39,6 +42,8 @@ from scipy.signal import correlate
 from statsmodels.tsa.stattools import acf
 
 from tqdm import tqdm
+
+from decimal import Decimal
 
 warnings.filterwarnings('ignore')
 
@@ -92,17 +97,22 @@ class Exp_Main(Exp_Basic):
             model_dict = {
                 'FEDformer': FEDformer,
                 'Autoformer': Autoformer,
+                'AutoformerSansRoll': AutoformerSansRoll,
                 'Transformer': Transformer,
                 'Informer': Informer,
                 'Triformer': Triformer,
                 'FiLM': FiLM,
                 'DLinear': DLinear,
                 'NLinear': NLinear,
+                'NLinearSansNorm': NLinearSansNorm,
                 'NLinearLHF': NLinearLHF,
                 'NHITS': NHITS,
                 'TiDE': TiDE,
                 'NBEATS': NBEATS,
                 'Pyraformer': Pyraformer,
+                'PyraformerSansMask': PyraformerSansMask,
+                'PyraformerOppMask': PyraformerOppMask,
+                'PyraformerEncoderOppMask': PyraformerEncoderOppMask,
                 'SAMformer': SAMformer,
                 'CycleNet': CycleNet,
                 'SpaceTime': SpaceTime,
@@ -231,6 +241,13 @@ class Exp_Main(Exp_Basic):
         train_data, train_loader = self._get_data(flag='train')
         vali_data, vali_loader = self._get_data(flag='val')
         test_data, test_loader = self._get_data(flag='test')
+ 
+        if not self.args.inspect_backward_pass is None and "_batchsize" in self.args.inspect_backward_pass:
+            batchsize_timestep = int(self.args.inspect_backward_pass.split('=')[-1])
+            self.args.inspect_backward_pass = self.args.inspect_backward_pass.split("_batchsize")[0]
+            skip_zeroes = True
+        else:
+            skip_zeroes = False
         
         if not self.args.inspect_backward_pass is None:
             if self.args.backward_pass_set == "val":
@@ -263,6 +280,15 @@ class Exp_Main(Exp_Basic):
         batch_start = 0
         if not self.args.inspect_backward_pass is None:
 
+            # Per layer norms
+            if '=' in self.args.inspect_backward_pass and not "batchsizes" in self.args.inspect_backward_pass:
+                layer_name = self.args.inspect_backward_pass.split('=')[-1]
+                if layer_name[0] != layer_name[-1]:
+                    raise AssertionError("Use parantheses for layer names")
+                layer_names = [x.strip() for x in layer_name[1:-1].split(',')]
+            else:
+                layer_names = [n[0] for n in self.model.named_parameters()]
+
             if os.path.exists("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass)):
                 load_dict = torch.load("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
                 grad_norms_per_timestep = load_dict["gradnorms"]
@@ -272,14 +298,14 @@ class Exp_Main(Exp_Basic):
                     exit()
 
             else:
-                grad_norms_per_timestep = {"forward": [torch.zeros(len(train_loader)) \
+                grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names))) \
                                                             for _ in range(self.args.pred_len+1)],
-                                           "backward": [torch.zeros(len(train_loader)) \
+                                           "backward": [torch.zeros((len(train_loader), len(layer_names))) \
                                                             for _ in range(self.args.pred_len+1)]}
 
         elif not self.args.calculate_acf is None:
             autocorrs = []
-
+       
         for epoch in range(self.args.train_epochs):
             iter_count = 0
             train_loss = []
@@ -408,43 +434,65 @@ class Exp_Main(Exp_Basic):
                                     autocorrs.append(feature_autocorrs)
 
                     else:
+
+                        if any([x in self.args.model for x in ["former", "SpaceTime", "DDPM"]]) and not skip_zeroes:
+                            step = 50
+                        else:
+                            step = 1
+
                         if epoch > 0:
-                            for idx in range(self.args.pred_len+1):
+                            for idx in range(0, self.args.pred_len+1, step):
+
+                                if skip_zeroes:
+                                    if (self.args.inspect_backward_pass == "forward" and idx!=batchsize_timestep):
+                                        continue
+
                                 if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
-                                    print ("Grad norm for H: %d->%d: %.5f" % (idx, self.args.pred_len,
-                                                                                grad_norms_per_timestep["backward"][idx].mean()))
+                                    norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in zip(layer_names, grad_norms_per_timestep["backward"][idx].mean(axis=0))])
+                                    print ("Grad norm for H: %d->%d: %s" % (idx, self.args.pred_len, norms_str))
                                 else:
-                                    print ("Grad norm for H: %d->%d: %.5f" % (1, idx,
-                                                                                grad_norms_per_timestep["forward"][idx].mean()))
+                                    norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in zip(layer_names, grad_norms_per_timestep["forward"][idx].mean(axis=0))])
+                                    print ("Grad norm for H: %d->%d: %s" % (0, idx, norms_str))
                             exit()
 
-                        for h in range(self.args.pred_len+1):
+                        for h in range(0, self.args.pred_len+1, step):
+
+                            if skip_zeroes:
+                                if (self.args.inspect_backward_pass == "forward" and h!=batchsize_timestep):
+                                    continue
+
                             criterion = self._select_criterion(backward_pass_inspect_cutoff=h, 
                                             inspect_type=self.args.inspect_backward_pass, horizon=self.args.pred_len)
                             loss = criterion(outputs, batch_y)
                                 
                             loss.backward(retain_graph=True)
-                            grad_norms = []
-                            for param in self.model.parameters():
+                            #grad_norms = []
+                            
+                            for idx, (n, param) in enumerate(self.model.named_parameters()):
+                                if not n in layer_names:
+                                    print ("CONTINUE")
+                                    continue
                                 if not param.grad is None:
-                                    grad_norms.append(param.grad.norm())
+                                    #grad_norms.append(param.grad.norm())
+                                    grad_norms_per_timestep[self.args.inspect_backward_pass][h][i][idx] = param.grad.norm()
                                 #print ("Batch %d/%d: Horizon Index %d/%d: Gradients!" % (i, len(train_loader), h, self.args.pred_len), end='\r')
                             
-                            grad_norms_per_timestep[self.args.inspect_backward_pass][h][i] = \
-                                    sum(grad_norms)/(len(grad_norms)-1) if self.args.inspect_backward_pass == "backward" \
-                                    else sum(grad_norms)/(len(grad_norms)-1)
+                            #grad_norms_per_timestep[self.args.inspect_backward_pass][h][i] = \
+                            #        sum(grad_norms)/len(grad_norms) if self.args.inspect_backward_pass == "backward" \
+                            #        else sum(grad_norms)/len(grad_norms)
                             
                             for param in self.model.parameters():
                                 if not param.grad is None:
                                     param.grad.fill_(0)
-                        
+                            
                         save_dict = {"batch": torch.tensor(i), "gradnorms": grad_norms_per_timestep}
                         if not os.path.isdir("gradnorms_temp"):
                             os.mkdir("gradnorms_temp")
                         torch.save(save_dict, "gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
 
                         loss.backward(retain_graph=False)
-                        # No zero_grad between batches with detach()
+                        
+                        # No optim.step() between batches with detach()
                         for param in self.model.parameters():
                             if not param.grad is None:
                                 param.grad.detach()
