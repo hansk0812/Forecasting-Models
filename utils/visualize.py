@@ -113,6 +113,7 @@ if __name__ == "__main__":
     ap.add_argument("--models", nargs='+', help="Models to include in visualization. Ignore for all available models.", default=None)
     ap.add_argument("--start_color_idx", default=[0], nargs='+', help="Color idx for single color per model", type=int)
     ap.add_argument("--name", help="Filename when specific layers are used in gradnorms", default=None)
+    ap.add_argument("--interpolated", help="Flag to interpolate smaller gradnorms to largest gradnorm (1 per model)", default=None)
     args = ap.parse_args()
 
     assert "gradnorms" in args.mode or "autocorr" in args.mode
@@ -130,6 +131,26 @@ if __name__ == "__main__":
     assert (any(["=(" in m for m in args.models]) and args.name[0]=='(' and args.name[-1]==')') or \
             all([not '=' in m for m in args.models])
 
+    assert ("gradnorms" in args.mode and not args.interpolated is None) or args.interpolated is None
+    assert args.interpolated is None or (not args.interpolated is None and args.interpolated[0] == '(' and args.interpolated[-1] == ')')
+
+    if not args.interpolated is None:
+        if not args.name is None:
+            if args.name[0] == '(':
+                mnames = [x.strip() for x in args.name[1:-1].split(',')]
+            else:
+                mnames = [args.name]
+        else:
+            mnames = args.models
+        
+        interp = {}
+        for n, f in zip(mnames, [x.strip() for x in args.interpolated[1:-1].split(',')]):
+            interp[n] = float(f)
+        args.interpolated = interp
+
+    if not args.name is None and args.name[0] == '(':
+        args.name = [x.strip() for x in args.name[1:-1].split(',')]
+
     if "=(" in args.mode:
         models_variable_name = {}
         if any(['=' in m for m in args.models]):
@@ -140,7 +161,7 @@ if __name__ == "__main__":
 
                     param_names = [x.strip() for x in args.mode.split('=')[1][1:-1].split(',')]
                     model_name = m.split('=')[0]
-                    assert all([x<len(param_names) for x in param_start_end]) and param_start_end[0] < param_start_end[1]
+                    assert all([x<len(param_names) for x in param_start_end]) and param_start_end[0] <= param_start_end[1]
                     
                     if not model_name in models_variable_name:
                         models_variable_name[model_name] = {"model_idx": idx, "values": [param_start_end]}
@@ -323,11 +344,15 @@ if __name__ == "__main__":
                             key_idx = keys.index(key)
                             values = values[key_idx]
                     
-                    print (cutoff_type, np.array(values).shape, type(values[0]), isinstance(values[0], float))
                     if not isinstance(values[0], float):
                         if isinstance(models_variable_name[model]["values"], list):
                             legend_list = {}
+                            
                             if model in models_variable_name[model]["values"]:
+                                print (model, "max value:", max(all_values))
+                                if not args.interpolated is None:
+                                    all_values /= args.interpolated[model] #/= max(all_values)
+
                                 p = plot_HAM(all_values, model, idx)
                                 legend_list[model] = [p]
                             
@@ -346,6 +371,11 @@ if __name__ == "__main__":
                                 values_many.append(np.array(values[start:(end+1)]).mean(axis=0))
                             values = np.array(values_many)
                             for jdx, value in enumerate(values):
+                                
+                                print (args.name[models_variable_name[model]["model_idx"]+jdx], "max value:", max(value))
+                                if not args.interpolated is None:
+                                    value /= args.interpolated[args.name[models_variable_name[model]["model_idx"]+jdx]] #/= max(value)
+
                                 p = plot_HAM(value, args.name[models_variable_name[model]["model_idx"]+jdx], idx)
                                 if args.name[models_variable_name[model]["model_idx"]+jdx] in legend_list:
                                     legend_list[args.name[models_variable_name[model]["model_idx"]+jdx]].append(p)
@@ -359,7 +389,7 @@ if __name__ == "__main__":
                                 p = plot_HAM(values, model, idx, loss_based_weights, h, cutoff_type)
                     
                     if len(values.shape) > 1:
-                        model_names_multiple = args.name[1:-1].split(',')[models_variable_name[model]["model_idx"]: models_variable_name[model]["model_idx"]+len(values)]
+                        model_names_multiple = args.name[models_variable_name[model]["model_idx"]: models_variable_name[model]["model_idx"]+len(values)]
                         for n, v in zip(model_names_multiple, values):
                             if n in plot_diffs:
                                 plot_diffs[n][cutoff_type] = v
@@ -398,7 +428,7 @@ if __name__ == "__main__":
                                 print ("Model: %s ; H = %d" % (n, h))
                                 midpts[n] = np.argwhere(np.diff(np.sign(np.array(v)-midpts[n][0])))
                                 
-                        plots = legend_list
+                        plots.update(legend_list)
                     else:
                         if len(midpts[model]) == 0:
                             midpts[model].append(np.array(values))
@@ -444,7 +474,7 @@ if __name__ == "__main__":
                 plt.title("Self attention models' ACF averages over the test set", fontsize=10)
                 
                 if any(['=' in m for m in args.models]):
-                    models_name = '_'.join(args.name[1:-1].split(','))
+                    models_name = '_'.join(args.name)
                 else:
                     models_name = '_'.join(sorted(args.models))
                 plt.savefig("plots_/autocorrs_%d_%s.pdf" % (h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
@@ -484,12 +514,20 @@ if __name__ == "__main__":
             #ax.set_ylim(top=0.009)
 
             ax.set_xlabel("Causal Sub-Series: 0→x", fontsize=10)
-            ylabel = "Gradient Norm Average" if args.name is None else "%s Gradient Norm Average" % args.name
+            
+            if not args.name is None:
+                min_str_length = min([len(x) for x in args.name])
+                for index in range(min_str_length):
+                    if any([args.name[jdx-1][index] != args.name[jdx][index] for jdx in range(1, len(args.name))]):
+                        break
+                common_name_str = args.name[0][:index]
+            
+            ylabel = "Gradient Norm Average" if args.name is None else "%s Gradient Norm Average" % common_name_str
             ax.set_ylabel(ylabel, fontsize=10)
 
             if '=' in args.mode:
                 if '(' in args.mode:
-                    gradnorms_str = "gradnorms_" + (args.name if not '(' in args.name else '_'.join(args.name[1:-1].split(',')))
+                    gradnorms_str = "gradnorms_" + common_name_str
                     #'_'.join([x.strip() for x in args.mode.split('=')[1:-1].split(',')])
                 else:
                     gradnorms_str = "gradnorms_" + args.mode.split('=')[-1].replace('.', '-')
@@ -497,7 +535,7 @@ if __name__ == "__main__":
                 gradnorms_str = "gradnorms"
 
             if any(['=' in m for m in args.models]):
-                models_name = '_'.join(args.name[1:-1].split(','))
+                models_name = '_'.join(args.name)
             else:
                 models_name = '_'.join(sorted(args.models))
             plt.savefig("plots_/%s_%d_%s.pdf" % (gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
@@ -522,13 +560,13 @@ if __name__ == "__main__":
             plt.legend(prop={"size": 10}, loc="best")
             #plt.title("Difference between forward and backward mode gradient norm averages")
             plt.xlabel("Timestep h for subseries", fontsize=10)
-            ylabel = "Difference at h [g(0→h) - g(h→%d)]" % h if args.name is None else "%s Difference at h [g(0→h) - g(h→%d)]" % (args.name, h)
+            ylabel = "Difference at h [g(0→h) - g(h→%d)]" % h if args.name is None else "%s Difference at h [g(0→h) - g(h→%d)]" % (common_name_str, h)
             plt.ylabel(ylabel, fontsize=10)
             plt.title("Differences plots over %d models" % len(args.models), fontsize=10)
             
             if '=' in args.mode:
                 if '(' in args.mode:
-                    gradnorms_str = "gradnorms_" + args.name if not '(' in args.name else '_'.join(args.name[1:-1].split(',')) 
+                    gradnorms_str = "gradnorms_" + common_name_str 
                     #'_'.join([x.strip() for x in args.mode.split('=')[1:-1].split(',')])
                 else:
                     gradnorms_str = "gradnorms_" + args.mode.split('=')[-1].replace('.', '-')
@@ -536,7 +574,7 @@ if __name__ == "__main__":
                 gradnorms_str = "gradnorms"
             
             if any(['=' in m for m in args.models]):
-                models_name = '_'.join(args.name[1:-1].split(','))
+                models_name = '_'.join(args.name)
             else:
                 models_name = '_'.join(sorted(args.models))
             plt.savefig("plots_/%s_%d_%s_diffs.pdf" % (gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
@@ -619,13 +657,13 @@ if __name__ == "__main__":
             
             plt.xlabel("Timesteps", fontsize=10)
             ylabel = "Signed Area w.r.t line of proportionality" if args.name is None else \
-                     "%s Signed Area w.r.t line of proportionality" % args.name
+                     "%s Signed Area w.r.t line of proportionality" % common_name_str
             plt.ylabel(ylabel, fontsize=10)
             plt.title("Dotted Causal mode areas and Dashed Anti-Causal mode areas", fontsize=10)
             
             if '=' in args.mode:
                 if '(' in args.mode:
-                    gradnorms_str = "gradnorms_" + args.name if not '(' in args.name else '_'.join(args.name[1:-1].split(',')) 
+                    gradnorms_str = "gradnorms_" + common_name_str 
                     #'_'.join([x.strip() for x in args.mode.split('=')[1:-1].split(',')])
                 else:
                     gradnorms_str = "gradnorms_" + args.mode.split('=')[-1].replace('.', '-')
@@ -633,7 +671,7 @@ if __name__ == "__main__":
                 gradnorms_str = "gradnorms"
 
             if any(['=' in m for m in args.models]):
-                models_name = '_'.join(args.name[1:-1].split(','))
+                models_name = '_'.join(args.name)
             else:
                 models_name = '_'.join(sorted(args.models))
             plt.savefig("plots_/%s_%d_%s_areas.pdf" % (gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
@@ -669,7 +707,7 @@ if __name__ == "__main__":
     
     if '=' in args.mode:
         if '(' in args.mode:
-            gradnorms_str = "gradnorms_" + args.name if not '(' in args.name else '_'.join(args.name[1:-1].split(',')) 
+            gradnorms_str = "gradnorms_" + common_name_str 
             #'_'.join([x.strip() for x in args.mode.split('=')[1:-1].split(',')])
         else:
             gradnorms_str = "gradnorms_" + args.mode.split('=')[-1].replace('.', '-')
@@ -677,7 +715,7 @@ if __name__ == "__main__":
         gradnorms_str = "gradnorms"
 
     if any(['=' in m for m in args.models]):
-        models_name = '_'.join(args.name[1:-1].split(','))
+        models_name = '_'.join(args.name)
     else:
         models_name = '_'.join(sorted(args.models))
     plt.savefig("plots_/%s_%d_%s_midpts.pdf" % (gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
@@ -721,12 +759,12 @@ if __name__ == "__main__":
     plt.title("Interpolated area plots over %s H={96,192,336,720} models" % args.models[0], fontsize=10)
     plt.xlabel("Fraction of Horizon", fontsize=10)
     ylabel = "Fraction of gradient norm average" if args.name is None else \
-             "%s Fraction of gradient norm average" % args.name
+             "%s Fraction of gradient norm average" % common_name_str
     plt.ylabel(ylabel, fontsize=10)
    
     if '=' in args.mode:
         if '(' in args.mode:
-            gradnorms_str = "gradnorms_" + args.name if not '(' in args.name else '_'.join(args.name[1:-1].split(',')) 
+            gradnorms_str = "gradnorms_" + common_name_str 
             #'_'.join([x.strip() for x in args.mode.split('=')[1:-1].split(',')])
         else:
             gradnorms_str = "gradnorms_" + args.mode.split('=')[-1].replace('.', '-')
@@ -734,7 +772,7 @@ if __name__ == "__main__":
         gradnorms_str = "gradnorms"
     
     if any(['=' in m for m in args.models]):
-        models_name = '_'.join(args.name[1:-1].split(','))
+        models_name = '_'.join(args.name)
     else:
         models_name = '_'.join(sorted(args.models))
     plt.savefig("plots_/%s_%s_areas.pdf" % (gradnorms_str, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
@@ -780,11 +818,11 @@ if __name__ == "__main__":
     plt.title("Interpolated area plots over %s H={96,192,336,720} models" % args.models[0], fontsize=10)
     plt.xlabel("Fraction of Horizon", fontsize=10)
     ylabel = "Fraction of gradient norm average" if args.name is None else \
-             "%s Fraction of gradient norm average" % args.name
+             "%s Fraction of gradient norm average" % common_name_str
     plt.ylabel(ylabel, fontsize=10)
     if '=' in args.mode:
         if '(' in args.mode:
-            gradnorms_str = "gradnorms_" + args.name if not '(' in args.name else '_'.join(args.name[1:-1].split(',')) 
+            gradnorms_str = "gradnorms_" + common_name_str
             #'_'.join([x.strip() for x in args.mode.split('=')[1:-1].split(',')])
         else:
             gradnorms_str = "gradnorms_" + args.mode.split('=')[-1].replace('.', '-')
@@ -792,7 +830,7 @@ if __name__ == "__main__":
         gradnorms_str = "gradnorms"
     
     if any(['=' in m for m in args.models]):
-        models_name = '_'.join(args.name[1:-1].split(','))
+        models_name = '_'.join(args.name)
     else:
         models_name = '_'.join(sorted(args.models))
     plt.savefig("plots_/%s_%s_areas.pdf" % (gradnorms_str, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
