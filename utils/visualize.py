@@ -168,7 +168,7 @@ if __name__ == "__main__":
                     else:
                         models_variable_name[model_name]["values"].append(param_start_end)
                 else:
-                    if not model_name in models_variable_name:
+                    if not m in models_variable_name:
                         models_variable_name[m] = {"model_idx": idx, "values": [m]}
                     else:
                         models_variable_name[m]["values"].append(m)
@@ -251,7 +251,7 @@ if __name__ == "__main__":
             autocorrs_gt = []
         else:
             poly_areas = OrderedDict({k: {} for k in types})
-        
+
         plot_diffs = {}
         for cutoff_type in types:
             
@@ -270,16 +270,17 @@ if __name__ == "__main__":
             # Eliminate duplicates for code to handle it!
             fnames = list(dict.fromkeys(fnames))
             
-            print (fnames)
             for idx, fname in enumerate(fnames):
                 model = fname.split('/')[-1].split('_')[0]
                 
-                if not model in plot_diffs:
+                if not model in plot_diffs and len(plot_diffs) == 0:
                     if any([model in x for x in args.models]):
                         indices = [idx for idx, m in enumerate(args.models) if model in m]
                         for index in indices:
                             if not '=' in args.models[index]:
                                 plot_diffs[model] = {}
+                            else:
+                                plot_diffs[args.name[index]] = {}
 
                 if "gradnorms" in args.mode:
 
@@ -305,9 +306,11 @@ if __name__ == "__main__":
                                 if jdx < min_idx:
                                     min_idx = jdx
                                     keys = [x.split('=')[0] for x in gradnorm_str.split(' ')]
-                                values.append([x.split('=')[1] for x in gradnorm_str.split(' ')])
+                                values.append([float(x.split('=')[1].strip()) for x in gradnorm_str.split(' ')])
                     
+                    # values: (h,l) horizon x num_layers
                     # ASSUMPTION: Interpolation independently is the same as interpolation of the mean
+                    # ALSO TRANSPOSES VALUES
                     if len(values) != h + 1:
                         if isinstance(values[0], float):
                             x_range = np.arange(0, h+1, np.round(h, -2)/(len(values)-2)).tolist() + [h]
@@ -323,15 +326,18 @@ if __name__ == "__main__":
                                 X = np.linspace(0, h, h+1)
                                 values_interpolated.append(values_spline(X))
                             values = values_interpolated
+                    else:
+                        values = np.array(values).T
                     
                     if '=' in args.mode:
                         if not models_variable_name is None and \
-                           model in models_variable_name and \
-                           isinstance(models_variable_name[model]["values"], list):
+                            model in models_variable_name and \
+                            isinstance(models_variable_name[model]["values"], list):
                             all_values = np.array(values).mean(axis=0)
                         else:
                             all_values = None
-                            
+                        
+                        # Sort and remove values from file's layer keys to gradnorm's layer keys
                         if '(' in args.mode:
                             values_new = []
                             keys_diff_models = [x.strip() for x in args.mode.split('=')[-1][1:-1].split(',')]
@@ -349,30 +355,35 @@ if __name__ == "__main__":
                             legend_list = {}
                             
                             if model in models_variable_name[model]["values"]:
-                                print (model, "max value:", max(all_values))
+                                if cutoff_type == "forward":
+                                    print (model, "max value:", max(all_values))
                                 if not args.interpolated is None:
                                     all_values /= args.interpolated[model] #/= max(all_values)
 
                                 p = plot_HAM(all_values, model, idx)
                                 legend_list[model] = [p]
                             
-                            if model in models_variable_name[model]["values"]:
                                 model_index = models_variable_name[model]["values"].index(model)
-                                del models_variable_name[model]["values"][model_index]
-                                model_index += models_variable_name[model]["model_idx"]
                             else:
                                 model_index = 1e7
-
-                            values_many = []
                             
-                            for jdx, (start, end) in enumerate(models_variable_name[model]["values"]):
-                                if jdx == model_index - models_variable_name[model]["model_idx"]:
+                            # values: (l,h) --> (m,h) num layers in file x horizon --> num models in file x horizon
+                            values_many = []
+                            for jdx, start_end in enumerate(models_variable_name[model]["values"]):
+                                if jdx == model_index:
                                     values_many.append(all_values)
-                                values_many.append(np.array(values[start:(end+1)]).mean(axis=0))
+                                else:
+                                    start, end = start_end
+                                    values_many.append(np.array(values[start:(end+1)]).mean(axis=0))
                             values = np.array(values_many)
+                            
                             for jdx, value in enumerate(values):
+
+                                if jdx == model_index:
+                                    continue
                                 
-                                print (args.name[models_variable_name[model]["model_idx"]+jdx], "max value:", max(value))
+                                if cutoff_type == "forward":
+                                    print (args.name[models_variable_name[model]["model_idx"]+jdx], "max value:", max(value))
                                 if not args.interpolated is None:
                                     value /= args.interpolated[args.name[models_variable_name[model]["model_idx"]+jdx]] #/= max(value)
 
@@ -389,7 +400,8 @@ if __name__ == "__main__":
                                 p = plot_HAM(values, model, idx, loss_based_weights, h, cutoff_type)
                     
                     if len(values.shape) > 1:
-                        model_names_multiple = args.name[models_variable_name[model]["model_idx"]: models_variable_name[model]["model_idx"]+len(values)]
+                        model_names_multiple = args.models[models_variable_name[model]["model_idx"]: models_variable_name[model]["model_idx"]+len(values)]
+                        model_names_multiple = [x if not '=' in x else args.name[models_variable_name[model]["model_idx"]+jdx] for jdx, x in enumerate(model_names_multiple)]
                         for n, v in zip(model_names_multiple, values):
                             if n in plot_diffs:
                                 plot_diffs[n][cutoff_type] = v
@@ -425,7 +437,6 @@ if __name__ == "__main__":
                             if len(midpts[n]) == 0:
                                 midpts[n].append(np.array(v))
                             else:
-                                print ("Model: %s ; H = %d" % (n, h))
                                 midpts[n] = np.argwhere(np.diff(np.sign(np.array(v)-midpts[n][0])))
                                 
                         plots.update(legend_list)
@@ -433,7 +444,6 @@ if __name__ == "__main__":
                         if len(midpts[model]) == 0:
                             midpts[model].append(np.array(values))
                         else:
-                            print ("Model: %s ; H = %d" % (model, h))
                             midpts[model] = np.argwhere(np.diff(np.sign(np.array(values)-midpts[model][0])))
                         
                         plots[model].append(p)
@@ -545,8 +555,8 @@ if __name__ == "__main__":
             plt.clf()
             min_y, midpts_diff = np.inf, {}
             plt.plot(list(range(h+1)), np.arange(-1, 1, 2./(h+1)), linestyle="--", color='black', label="Uniform Differences Line")
+            
             for idx, model_name in enumerate(sorted(plot_diffs.keys())):
-                print ("diffs: %s" % model_name)
                 diff = np.array(plot_diffs[model_name]["forward"]) - np.array(plot_diffs[model_name]["backward"])
                 diff /= diff.max()
                 plt.plot(list(range(len(diff))), diff, label=model_name, color=plot_colors_per_model[idx])
