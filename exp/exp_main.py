@@ -49,7 +49,7 @@ warnings.filterwarnings('ignore')
 
 class BackwardPassInspectLoss(nn.Module):
 
-    def __init__(self, horizon, cutoff, cutoff_type, device, loss="mae", return_batch_dim=False):
+    def __init__(self, horizon, cutoff, cutoff_type, device, loss="mae", return_batch_dim=False, multivariate_softmax=False):
         # cutoff_type=forward: For a given horizon, 0:cutoff are 1 and cutoff:horizon are 0
         # cutoff_type=backward: For a given horizon, 0:cutoff are 0 and cutoff:horizon are 1
         # return_batch_dim=True for DDPM model
@@ -68,16 +68,25 @@ class BackwardPassInspectLoss(nn.Module):
         else:
             self.loss_fn = self.MAE_per_timestep
 
-        self.mean_dims_per_timestep = (0,2) if not return_batch_dim else (2)
-        self.mean_dims_return = (0) if not return_batch_dim else (1)
+        self.mean_dims_per_timestep = (0,2) if not return_batch_dim else (2,)
+        self.mean_dims_return = (0,) if not return_batch_dim else (1,)
+
+        if multivariate_softmax:
+            self.mean_dims_per_timestep = tuple(x for x in self.mean_dims_per_timestep if x != 2)
 
     def MSE_per_timestep(self, x, y):
         # B, H, D
-        return torch.mean((x-y)**2, dim=self.mean_dims_per_timestep)
-    
+        if len(self.mean_dims_per_timestep) > 0:
+            return torch.mean((x-y)**2, dim=self.mean_dims_per_timestep)
+        else:
+            return (x-y)**2
+
     def MAE_per_timestep(self, x, y):
         # B, H, D
-        return torch.mean(torch.abs(x-y), dim=self.mean_dims_per_timestep)
+        if len(self.mean_dims_per_timestep) > 0:
+            return torch.mean((x-y)**2, dim=self.mean_dims_per_timestep)
+        else:
+            return torch.abs(x-y)
 
     def forward(self, x, y):
         
@@ -173,13 +182,13 @@ class Exp_Main(Exp_Basic):
         model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
-    def _select_criterion(self, backward_pass_inspect_cutoff=None, inspect_type=None, horizon=None):
+    def _select_criterion(self, backward_pass_inspect_cutoff=None, inspect_type=None, horizon=None, multivariate_softmax=None):
         if backward_pass_inspect_cutoff is None:
             criterion = nn.MSELoss()
         else:
             assert not horizon is None, "Interpreters!"
             criterion = BackwardPassInspectLoss(horizon, backward_pass_inspect_cutoff, 
-                                                inspect_type, device=self.device, loss=self.args.loss)
+                                                inspect_type, device=self.device, loss=self.args.loss, multivariate_softmax=multivariate_softmax)
         return criterion
 
     def vali(self, vali_data, vali_loader, criterion):
@@ -187,6 +196,7 @@ class Exp_Main(Exp_Basic):
         self.model.eval()
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_cycle) in enumerate(vali_loader):
+
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float()
                 if self.args.model == "MultiResolutionDDPM":
@@ -228,9 +238,9 @@ class Exp_Main(Exp_Basic):
                         else:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
-                
+
                 if self.args.model != "MultiResolutionDDPM":
-                    loss = criterion(outputs, batch_y)
+                   loss = criterion(outputs, batch_y)
 
                 total_loss.append(loss)
         total_loss = torch.mean(torch.stack(total_loss))
@@ -290,19 +300,39 @@ class Exp_Main(Exp_Basic):
                 layer_names = [n[0] for n in self.model.named_parameters()]
 
             if os.path.exists("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass)):
-                load_dict = torch.load("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
-                grad_norms_per_timestep = load_dict["gradnorms"]
-                batch_start = load_dict["batch"] + 1
+                try:
+                    load_dict = torch.load("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+                    grad_norms_per_timestep = load_dict["gradnorms"]
+                    batch_start = load_dict["batch"] + 1
                 
-                if batch_start == len(train_loader):
-                    exit()
-
+                    if batch_start == len(train_loader):
+                        exit()
+                except Exception:
+                    if not self.args.backward_pass_multivariate:
+                        grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names))) \
+                                                                    for _ in range(self.args.pred_len+1)],
+                                                   "backward": [torch.zeros((len(train_loader), len(layer_names))) \
+                                                                        for _ in range(self.args.pred_len+1)]}
+                    else:
+                        #TODO: Data-based splits for SM models
+                        grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
+                                                                    for _ in range(self.args.pred_len+1)],
+                                                   "backward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
+                                                                        for _ in range(self.args.pred_len+1)]}
+ 
             else:
-                grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names))) \
-                                                            for _ in range(self.args.pred_len+1)],
-                                           "backward": [torch.zeros((len(train_loader), len(layer_names))) \
-                                                            for _ in range(self.args.pred_len+1)]}
-
+                if not self.args.backward_pass_multivariate:
+                    grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names))) \
+                                                                for _ in range(self.args.pred_len+1)],
+                                               "backward": [torch.zeros((len(train_loader), len(layer_names))) \
+                                                                for _ in range(self.args.pred_len+1)]}
+                else:
+                    #TODO: Data-based splits for SM models
+                    grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
+                                                                for _ in range(self.args.pred_len+1)],
+                                               "backward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
+                                                                    for _ in range(self.args.pred_len+1)]}
+ 
         elif not self.args.calculate_acf is None:
             autocorrs = []
        
@@ -441,18 +471,42 @@ class Exp_Main(Exp_Basic):
                             step = 1
 
                         if epoch > 0:
-                            for idx in range(0, self.args.pred_len+1, step):
+                            if not self.args.backward_pass_multivariate:
+                                for idx in range(0, self.args.pred_len+1, step):
 
-                                if skip_zeroes:
-                                    if (self.args.inspect_backward_pass == "forward" and idx!=batchsize_timestep):
-                                        continue
+                                    if skip_zeroes:
+                                        if (self.args.inspect_backward_pass == "forward" and idx!=batchsize_timestep):
+                                            continue
+                                
+                                    if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
+                                        norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
+                                                                zip(layer_names, grad_norms_per_timestep["backward"][idx].mean(axis=0))])
+                                        print ("Grad norm for H: %d->%d: %s" % (idx, self.args.pred_len, norms_str))
+                                    else:
+                                        norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
+                                                                zip(layer_names, grad_norms_per_timestep["forward"][idx].mean(axis=0))])
+                                        print ("Grad norm for H: %d->%d: %s" % (0, idx, norms_str))
+                            else:
+                                # Added multivariate softmax HAM plots
+                                for v_idx in range(self.args.enc_in):
+                                    
+                                    print ("M0\n")
+                                    for idx in range(0, self.args.pred_len+1, step):
 
-                                if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
-                                    norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in zip(layer_names, grad_norms_per_timestep["backward"][idx].mean(axis=0))])
-                                    print ("Grad norm for H: %d->%d: %s" % (idx, self.args.pred_len, norms_str))
-                                else:
-                                    norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in zip(layer_names, grad_norms_per_timestep["forward"][idx].mean(axis=0))])
-                                    print ("Grad norm for H: %d->%d: %s" % (0, idx, norms_str))
+                                        if skip_zeroes:
+                                            if (self.args.inspect_backward_pass == "forward" and idx!=batchsize_timestep):
+                                                continue
+
+                                        if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
+                                            norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
+                                                                zip(layer_names, grad_norms_per_timestep["backward"][idx].mean(axis=0)[:, v_idx])])
+                                            print ("Grad norm for H: %d->%d: %s" % (idx, self.args.pred_len, norms_str))
+                                        else:
+                                            norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
+                                                                zip(layer_names, grad_norms_per_timestep["forward"][idx].mean(axis=0)[:, v_idx])])
+                                            print ("Grad norm for H: %d->%d: %s" % (0, idx, norms_str))
+                                        
+                                        print ("\nM%d\n" % v_idx)
                             exit()
 
                         for h in range(0, self.args.pred_len+1, step):
@@ -462,29 +516,44 @@ class Exp_Main(Exp_Basic):
                                     continue
 
                             criterion = self._select_criterion(backward_pass_inspect_cutoff=h, 
-                                            inspect_type=self.args.inspect_backward_pass, horizon=self.args.pred_len)
+                                            inspect_type=self.args.inspect_backward_pass, horizon=self.args.pred_len,
+                                            multivariate_softmax=self.args.backward_pass_multivariate)
                             loss = criterion(outputs, batch_y)
+                            
+                            if not self.args.backward_pass_multivariate:
                                 
-                            loss.backward(retain_graph=True)
-                            #grad_norms = []
+                                loss.backward(retain_graph=True)
                             
-                            for idx, (n, param) in enumerate(self.model.named_parameters()):
-                                if not n in layer_names:
-                                    print ("CONTINUE")
-                                    continue
-                                if not param.grad is None:
-                                    #grad_norms.append(param.grad.norm())
-                                    grad_norms_per_timestep[self.args.inspect_backward_pass][h][i][idx] = param.grad.norm()
-                                #print ("Batch %d/%d: Horizon Index %d/%d: Gradients!" % (i, len(train_loader), h, self.args.pred_len), end='\r')
+                                for idx, (n, param) in enumerate(self.model.named_parameters()):
+                                    if not n in layer_names:
+                                        print ("CONTINUE")
+                                        continue
+                                    if not param.grad is None:
+                                        #grad_norms.append(param.grad.norm())
+                                        grad_norms_per_timestep[self.args.inspect_backward_pass][h][i][idx] = param.grad.norm()
+                                 
+                                 for param in self.model.parameters():
+                                    if not param.grad is None:
+                                        param.grad.fill_(0)
                             
-                            #grad_norms_per_timestep[self.args.inspect_backward_pass][h][i] = \
-                            #        sum(grad_norms)/len(grad_norms) if self.args.inspect_backward_pass == "backward" \
-                            #        else sum(grad_norms)/len(grad_norms)
-                            
-                            for param in self.model.parameters():
-                                if not param.grad is None:
-                                    param.grad.fill_(0)
-                            
+                            else:
+
+                                for v_idx in range(self.args.enc_in):
+                                    v_loss = loss[...,v_idx:v_idx+1].mean()
+                                    v_loss.backward(retain_graph=True)
+
+                                    for idx, (n, param) in enumerate(self.model.named_parameters()):
+                                        if not n in layer_names:
+                                            print ("CONTINUE")
+                                            continue
+                                        if not param.grad is None:
+                                            #grad_norms.append(param.grad.norm())
+                                            grad_norms_per_timestep[self.args.inspect_backward_pass][h][i][idx][v_idx] = param.grad.norm()
+                                    
+                                    for param in self.model.parameters():
+                                        if not param.grad is None:
+                                            param.grad.fill_(0)
+
                         save_dict = {"batch": torch.tensor(i), "gradnorms": grad_norms_per_timestep}
                         if not os.path.isdir("gradnorms_temp"):
                             os.mkdir("gradnorms_temp")
@@ -565,6 +634,14 @@ class Exp_Main(Exp_Basic):
         
         preds = []
         trues = []
+        if test_data.get_num_features() < 50: # RAM-specific
+            metric_avg = False
+        else:
+            #preds = np.zeros((self.args.pred_len, test_data.get_num_features()))
+            #trues = np.zeros((self.args.pred_len, test_data.get_num_features()))
+            #count = 0
+            metric_avg = True
+
         folder_path = './test_results/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
@@ -606,26 +683,26 @@ class Exp_Main(Exp_Basic):
                                                 for idx in range(batch_x.shape[-1])], dim=-1)
                             else:
                                 if self.args.model == "CycleNet":
-                                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                                    outputs = self.model(batch_x, batch_cycle)[0]
                                 elif self.args.model == "SpaceTime":
                                     (outputs, _), _ = self.model(batch_x)
                                 elif self.args.model == "MultiResolutionDDPM":
                                     self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                                 else:
-                                    outputs = self.model(batch_x, batch_cycle)[0]
+                                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                         else:
                             if self.args.features == "SM":
                                 outputs = torch.cat([self.model(batch_x[...,idx:idx+1], batch_x_mark, dec_inp, batch_y_mark) \
                                                 for idx in range(batch_x.shape[-1])], dim=-1)
                             else:
                                 if self.args.model == "CycleNet":
-                                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                                    outputs = self.model(batch_x, batch_cycle)
                                 elif self.args.model == "SpaceTime":
                                     (outputs, _), _ = self.model(batch_x)
                                 elif self.args.model == "MultiResolutionDDPM":
                                     self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                                 else:
-                                    outputs = self.model(batch_x, batch_cycle)
+                                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_cycle)
                 else:
                     if self.args.output_attention:
                         if self.args.features == "SM":
@@ -633,13 +710,13 @@ class Exp_Main(Exp_Basic):
                                                     for idx in range(batch_x.shape[-1])], dim=-1)
                         else:
                             if self.args.model == "CycleNet":
-                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                                outputs = self.model(batch_x, batch_cycle)[0]
                             elif self.args.model == "SpaceTime":
                                 (outputs, _), _ = self.model(batch_x)
                             elif self.args.model == "MultiResolutionDDPM":
                                 self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                             else:
-                                outputs = self.model(batch_x, batch_cycle)[0]
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
 
                     else:
                         if self.args.features == "SM":
@@ -658,7 +735,7 @@ class Exp_Main(Exp_Basic):
                                 outputs = self.model.test_forward(batch_x, batch_x_mark, batch_y, batch_y_mark)
                             else:
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-
+                
                 if not self.args.calculate_acf is None:
                     for b in range(batch_y.shape[0]):
                         feature_autocorrs = []
@@ -720,9 +797,11 @@ class Exp_Main(Exp_Basic):
                             param.grad.detach()
 
                 batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
-                outputs = outputs.detach().cpu().numpy()
-                batch_y = batch_y.detach().cpu().numpy()
 
+                if not metric_avg:
+                    outputs = outputs.detach().cpu().numpy()
+                    batch_y = batch_y.detach().cpu().numpy()
+                
                 pred = outputs  # outputs.detach().cpu().numpy()  # .squeeze()
                 true = batch_y  # batch_y.detach().cpu().numpy()  # .squeeze()
                 
@@ -742,10 +821,10 @@ class Exp_Main(Exp_Basic):
 #                            print ("Grad norm for H: %d->%d: %.5f" % (1, idx,
 #                                                                        grad_norms_per_timestep["forward"][idx].mean()))
 #                    exit()
-
+                
                 preds.append(pred)
                 trues.append(true)
-                if i % 20 == 0:
+                if i % 20 == 0 and not metric_avg:
                     input = batch_x.detach().cpu().numpy()
                     gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
                     pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
@@ -765,37 +844,56 @@ class Exp_Main(Exp_Basic):
                 print ("Autocorrelation for %s gt:" % self.args.model, np.array(autocorrs)[:,:,1:2,:].mean(axis=(0,1,2)))
                 exit()
  
-        preds = np.concatenate(preds, axis=0)
-        trues = np.concatenate(trues, axis=0)
-        print('test shape:', preds.shape, trues.shape)
+        if not metric_avg:
+            preds = np.concatenate(preds, axis=0)
+            trues = np.concatenate(trues, axis=0)
+            print('test shape:', preds.shape, trues.shape)
+
+        else:
+            mse = [((x-y)**2).mean(dim=-1) for x,y in zip(preds, trues)]
+            mae = [torch.abs(x-y).mean(dim=-1) for x,y in zip(preds, trues)]
+            #mse = [((x-y)**2).mean() for x,y in zip(preds, trues)]
+            #mae = [torch.abs(x-y).mean() for x,y in zip(preds, trues)]
+            mse = torch.cat(mse)
+            mae = torch.cat(mae)
+            #mse = torch.tensor(mse).mean()
+            #mae = torch.tensor(mae).mean()
+            print (mse.shape, mae.shape)
+            print('mse:{}, mae:{}'.format(mse.mean(), mae.mean()))
+            #preds = torch.cat(preds)
+            #trues = torch.cat(trues)
 
         # result save
-        folder_path = './results/' + setting + '/'
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
-
-        mae, mse, rmse, mape, mspe = metric(preds, trues)
-        print('mse:{}, mae:{}'.format(mse, mae))
-        f = open("result.txt", 'a')
-        f.write(setting + "  \n")
-        f.write('mse:{}, mae:{}'.format(mse, mae))
-        f.write('\n')
-        f.write('\n')
-        f.close()
-
-        np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
-        np.save(folder_path + 'pred.npy', preds)
-        np.save(folder_path + 'true.npy', trues)
+        #folder_path = './results/' + setting + '/'
+        #if not os.path.exists(folder_path):
+        #    os.makedirs(folder_path)
         
-        print ('result:', self.args.target, ((preds-trues)**2).mean(axis=(0,1)), np.abs(preds-trues).mean(axis=(0,1)))
-    
+        if not metric_avg:
+            mae, mse, rmse, mape, mspe = metric(preds, trues)
+            print('mse:{}, mae:{}'.format(mse, mae))
+            print ('result:', self.args.target, ((preds-trues)**2).mean(axis=(0,1)), np.abs(preds-trues).mean(axis=(0,1)))
+        
+        #f = open("result.txt", 'a')
+        #f.write(setting + "  \n")
+        #f.write('mse:{}, mae:{}'.format(mse, mae))
+        #f.write('\n')
+        #f.write('\n')
+        #f.close()
+
+        #np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
+        #np.save(folder_path + 'pred.npy', preds)
+        #np.save(folder_path + 'true.npy', trues)
+        
         plt.rcParams["figure.figsize"] = 5,2
         
-        for s in [0, 75]:
+        for s in [0]:
             start=s
             x = np.linspace(start,720,num=720-start)
-            y = np.mean((preds-trues)**2, axis=(0,2))[start:]
             
+            if not metric_avg:
+                y = np.mean((preds-trues)**2, axis=(0,2))[start:]
+            else:
+                y = mse.mean(dim=0).cpu().numpy()
             fig, (ax,ax2) = plt.subplots(nrows=2, sharex=True)
 
             extent = [x[0]-(x[1]-x[0])/2., x[-1]+(x[1]-x[0])/2.,0,1]
@@ -806,7 +904,7 @@ class Exp_Main(Exp_Basic):
             ax2.plot(x,y)
 
             plt.tight_layout()
-            plt.savefig("%s_heatmap_720_M_start%d.png" % (self.args.model, s))
+            plt.savefig("%s_%s_heatmap_720_M.pdf" % (self.args.data, self.args.model), dpi=300, bbox_inches="tight")
 
         return
 

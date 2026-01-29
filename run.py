@@ -105,6 +105,7 @@ def main():
     parser.add_argument('--load_from_chkpt', default=None, help="Path to pretrained model to resume training from")
     parser.add_argument('--gpu_memory_usage', action="store_true", help="If True, prints GPU memory usage summary and exits")
     parser.add_argument('--inspect_backward_pass', default=None, help="Uses 0-masked loss [forward, backward] to inspect gradients by horizon")
+    parser.add_argument('--backward_pass_multivariate', action="store_true", help="Set flag to enable multivariate gradient norm calculations")
     parser.add_argument('--calculate_acf', default=None, type=int, help="Uses a lag of value specified as argument for ACF")
     parser.add_argument('--backward_pass_set', default="train", type=str, help="One of [\"train\", \"val\", \"test\"]")
 
@@ -120,6 +121,9 @@ def main():
     parser.add_argument('--recurrent', action='store_true', help="xLSTM recurrence flag + recurrent LHF")
     
     args = parser.parse_args()
+
+    if args.model == "FEDformer":
+        args.factor = args.modes
 
     assert args.backward_pass_set in ["train", "val", "test"], "backward_pass_set argument not in train, val, test"
 
