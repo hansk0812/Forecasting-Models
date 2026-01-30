@@ -73,6 +73,7 @@ class BackwardPassInspectLoss(nn.Module):
 
         if multivariate_softmax:
             self.mean_dims_per_timestep = tuple(x for x in self.mean_dims_per_timestep if x != 2)
+            self.mask.unsqueeze_(1)
 
     def MSE_per_timestep(self, x, y):
         # B, H, D
@@ -406,7 +407,11 @@ class Exp_Main(Exp_Basic):
                     
                     if self.args.model != "MultiResolutionDDPM" or (
                         self.args.inspect_backward_pass is None and self.args.model == "MultiResolutionDDPM"):
-                    
+                        
+                        if not self.args.inspect_backward_pass is None and self.args.backward_pass_multivariate:
+                            if len(loss.shape) > 0:
+                                loss = loss[0]
+
                         train_loss.append(loss.item())
                 
                     if self.args.model == "MultiResolutionDDPM" and not self.args.inspect_backward_pass is None:
@@ -487,26 +492,30 @@ class Exp_Main(Exp_Basic):
                                                                 zip(layer_names, grad_norms_per_timestep["forward"][idx].mean(axis=0))])
                                         print ("Grad norm for H: %d->%d: %s" % (0, idx, norms_str))
                             else:
+                                if not os.path.isdir("logs/gradnorms_M"):
+                                    os.makedirs("logs/gradnorms_M")
+
                                 # Added multivariate softmax HAM plots
                                 for v_idx in range(self.args.enc_in):
                                     
-                                    print ("M0\n")
-                                    for idx in range(0, self.args.pred_len+1, step):
+                                    with open("logs/gradnorms_M/%s_%d_forward_gradnorms.txt", 'w') as f:
+                                        with open("logs/gradnorms_M/%s_%d_backward_gradnorms.txt", 'w') as g:
+                                            
+                                            for idx in range(0, self.args.pred_len+1, step):
 
-                                        if skip_zeroes:
-                                            if (self.args.inspect_backward_pass == "forward" and idx!=batchsize_timestep):
-                                                continue
+                                                if skip_zeroes:
+                                                    if (self.args.inspect_backward_pass == "forward" and idx!=batchsize_timestep):
+                                                        continue
 
-                                        if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
-                                            norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
-                                                                zip(layer_names, grad_norms_per_timestep["backward"][idx].mean(axis=0)[:, v_idx])])
-                                            print ("Grad norm for H: %d->%d: %s" % (idx, self.args.pred_len, norms_str))
-                                        else:
-                                            norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
-                                                                zip(layer_names, grad_norms_per_timestep["forward"][idx].mean(axis=0)[:, v_idx])])
-                                            print ("Grad norm for H: %d->%d: %s" % (0, idx, norms_str))
+                                                if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
+                                                    norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
+                                                                        zip(layer_names, grad_norms_per_timestep["backward"][idx].mean(axis=0)[:, v_idx])])
+                                                    g.write("Grad norm for H: %d->%d: %s\n" % (idx, self.args.pred_len, norms_str))
+                                                else:
+                                                    norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
+                                                                        zip(layer_names, grad_norms_per_timestep["forward"][idx].mean(axis=0)[:, v_idx])])
+                                                    f.write("Grad norm for H: %d->%d: %s\n" % (0, idx, norms_str))
                                         
-                                        print ("\nM%d\n" % v_idx)
                             exit()
 
                         for h in range(0, self.args.pred_len+1, step):
@@ -532,7 +541,7 @@ class Exp_Main(Exp_Basic):
                                         #grad_norms.append(param.grad.norm())
                                         grad_norms_per_timestep[self.args.inspect_backward_pass][h][i][idx] = param.grad.norm()
                                  
-                                 for param in self.model.parameters():
+                                for param in self.model.parameters():
                                     if not param.grad is None:
                                         param.grad.fill_(0)
                             
@@ -553,6 +562,8 @@ class Exp_Main(Exp_Basic):
                                     for param in self.model.parameters():
                                         if not param.grad is None:
                                             param.grad.fill_(0)
+                                
+                                loss = v_loss
 
                         save_dict = {"batch": torch.tensor(i), "gradnorms": grad_norms_per_timestep}
                         if not os.path.isdir("gradnorms_temp"):

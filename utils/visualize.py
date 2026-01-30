@@ -89,7 +89,7 @@ def find_poly_area(coords, h):
     
     return return_area
 
-def plot_HAM(values, model, colour_idx, loss_based_weights=None, h=None, cutoff_type=None):
+def plot_HAM(values, model, colour_idx, plot_colors_per_model, loss_based_weights=None, h=None, cutoff_type=None):
     p, = plt.plot(np.arange(0, len(values)), values, label=model, 
                     color=plot_colors_per_model[colour_idx], linewidth=1) #0.5) 
     plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors_per_model[colour_idx], linestyle='--', linewidth=1) #0.5) 
@@ -113,7 +113,7 @@ if __name__ == "__main__":
     ap.add_argument("--models", nargs='+', help="Models to include in visualization. Ignore for all available models.", default=None)
     ap.add_argument("--start_color_idx", default=[0], nargs='+', help="Color idx for single color per model", type=int)
     ap.add_argument("--name", help="Filename when specific layers are used in gradnorms", default=None)
-    ap.add_argument("--interpolated", help="Flag to interpolate smaller gradnorms to largest gradnorm (1 per model)", default=None)
+    ap.add_argument("--interpolated", help="Flag to interpolate smaller gradnorms to largest gradnorm (1 per model)", action="store_true")
     args = ap.parse_args()
 
     assert "gradnorms" in args.mode or "autocorr" in args.mode
@@ -131,10 +131,9 @@ if __name__ == "__main__":
     assert (any(["=(" in m for m in args.models]) and args.name[0]=='(' and args.name[-1]==')') or \
             all([not '=' in m for m in args.models])
 
-    assert ("gradnorms" in args.mode and not args.interpolated is None) or args.interpolated is None
-    assert args.interpolated is None or (not args.interpolated is None and args.interpolated[0] == '(' and args.interpolated[-1] == ')')
+    assert ("gradnorms" in args.mode and args.interpolated) or not args.interpolated
 
-    if not args.interpolated is None:
+    if args.interpolated:
         if not args.name is None:
             if args.name[0] == '(':
                 mnames = [x.strip() for x in args.name[1:-1].split(',')]
@@ -143,11 +142,8 @@ if __name__ == "__main__":
         else:
             mnames = args.models
         
-        interp = {}
-        for n, f in zip(mnames, [x.strip() for x in args.interpolated[1:-1].split(',')]):
-            interp[n] = float(f)
-        args.interpolated = interp
-
+        args.interpolated = {n: 0 for n in mnames}
+    
     if not args.name is None and args.name[0] == '(':
         args.name = [x.strip() for x in args.name[1:-1].split(',')]
 
@@ -174,6 +170,8 @@ if __name__ == "__main__":
                         models_variable_name[m]["values"].append(m)
         else:
             models_variable_name = None
+    else:
+        models_variable_name = None
 
     H = [96, 192, 336, 720]
     
@@ -193,7 +191,7 @@ if __name__ == "__main__":
     import matplotlib as mpl
     cmap = mpl.colormaps["BuPu"] #["OrRd"]
     # Take colors at regular intervals spanning the colormap.
-    colors = cmap(np.linspace(0.3, 1, 5)) #4))   
+    colors = cmap(np.linspace(0.3, 1, 7)) #4))   
     plot_colors_per_model = np.array(colors)[args.start_color_idx]
     #"""
     
@@ -252,7 +250,7 @@ if __name__ == "__main__":
         else:
             poly_areas = OrderedDict({k: {} for k in types})
 
-        plot_diffs = {}
+        plot_diffs = OrderedDict()
         for cutoff_type in types:
             
             fnames = sorted(glob.glob(os.path.join(args.folder, "*_%d_%s_%s.txt" % (
@@ -265,7 +263,7 @@ if __name__ == "__main__":
             if len(fnames) == 0:
                 print ("H=%d files not found!" % h if "gradnorms" in args.mode else int(h/int(cutoff_type))); continue #exit()
             
-            fnames = sorted(fnames, key=lambda x: x.split('/')[-1].split(".pdf")[0])
+            fnames = sorted(fnames, key=lambda x: x.split('/')[-1].split(".txt")[0])
             
             # Eliminate duplicates for code to handle it!
             fnames = list(dict.fromkeys(fnames))
@@ -273,7 +271,7 @@ if __name__ == "__main__":
             for idx, fname in enumerate(fnames):
                 model = fname.split('/')[-1].split('_')[0]
                 
-                if not model in plot_diffs and len(plot_diffs) == 0:
+                if not model in plot_diffs and cutoff_type == "forward":
                     if any([model in x for x in args.models]):
                         indices = [idx for idx, m in enumerate(args.models) if model in m]
                         for index in indices:
@@ -281,7 +279,7 @@ if __name__ == "__main__":
                                 plot_diffs[model] = {}
                             else:
                                 plot_diffs[args.name[index]] = {}
-
+                
                 if "gradnorms" in args.mode:
 
                     if not model in plots:
@@ -289,13 +287,14 @@ if __name__ == "__main__":
                             if not '=' in mdl:
                                 plots[model] = []
                                 midpts[model] = []
+
                     with open(fname, 'r') as f:
                         values, min_idx = [], 1e7
                         for jdx, line in enumerate(f.readlines()):
                             if model.lower() == "spacetime" and "Gra " in line:
                                 pt = float(line.split(": ")[-1])
                                 loss_based_weights[h][cutoff_type].append(pt)
-                            
+
                             if not "Grad " in line:
                                 continue
                             
@@ -314,17 +313,38 @@ if __name__ == "__main__":
                     if len(values) != h + 1:
                         if isinstance(values[0], float):
                             x_range = np.arange(0, h+1, np.round(h, -2)/(len(values)-2)).tolist() + [h]
+                            # unpredictable cubic interpolation when sequence is decreasing; reverse
+                            if cutoff_type != "forward":
+                                values = list(reversed(values))
                             values_spline = make_interp_spline(x_range, values)
                             X = np.linspace(0, h, h+1)
                             values = values_spline(X)
+                            if cutoff_type != "forward":
+                                values = values[::-1]
                         else:
                             values = np.array(values)
+
+                            # DECISION: Interpolating one feature at a time gives very different plots (#TODO: Future Work)
+                            if not '=' in args.mode:
+                                values = values.mean(axis=1)
+                            else:
+                                values = values
+
                             values_interpolated = []
                             for jdx in range(len(values[0])):
-                                x_range = np.arange(0, h+1, np.round(h, -2)/(len(values[:,jdx])-2)).tolist() + [h]
-                                values_spline = make_interp_spline(x_range, values[:,jdx])
+                                # unpredictable cubic interpolation when sequence is decreasing; reverse
+                                if cutoff_type != "forward":
+                                    values_s = values[:,jdx][::-1]
+                                else:
+                                    values_s = values[:,jdx]
+                                x_range = np.arange(0, h+1, np.round(h, -2)/(len(values_s)-2)).tolist() + [h]
+                                values_spline = make_interp_spline(x_range, values_s)
                                 X = np.linspace(0, h, h+1)
-                                values_interpolated.append(values_spline(X))
+                                if cutoff_type != "forward":
+                                    values_sy = values_spline(X)[::-1]
+                                else:
+                                    values_sy = values_spline(X)
+                                values_interpolated.append(values_sy)
                             values = values_interpolated
                     else:
                         values = np.array(values).T
@@ -351,16 +371,19 @@ if __name__ == "__main__":
                             values = values[key_idx]
                     
                     if not isinstance(values[0], float):
-                        if isinstance(models_variable_name[model]["values"], list):
+                        if not models_variable_name is None and isinstance(models_variable_name[model]["values"], list):
                             legend_list = {}
                             
                             if model in models_variable_name[model]["values"]:
                                 if cutoff_type == "forward":
-                                    print (model, "max value:", max(all_values))
-                                if not args.interpolated is None:
-                                    all_values /= args.interpolated[model] #/= max(all_values)
+                                    print (model, "max value:", max(all_values), "interpolation factor:", 1./max(all_values))
+                                
+                                if isinstance(args.interpolated, dict):
+                                    if args.interpolated[model] == 0:
+                                        args.interpolated[model] = 1./max(all_values)
+                                    all_values *= args.interpolated[model] #/= max(all_values)
 
-                                p = plot_HAM(all_values, model, idx)
+                                p = plot_HAM(all_values, model, idx, plot_colors_per_model)
                                 legend_list[model] = [p]
                             
                                 model_index = models_variable_name[model]["values"].index(model)
@@ -383,21 +406,46 @@ if __name__ == "__main__":
                                     continue
                                 
                                 if cutoff_type == "forward":
-                                    print (args.name[models_variable_name[model]["model_idx"]+jdx], "max value:", max(value))
-                                if not args.interpolated is None:
-                                    value /= args.interpolated[args.name[models_variable_name[model]["model_idx"]+jdx]] #/= max(value)
+                                    print (args.name[models_variable_name[model]["model_idx"]+jdx], "max value:", max(value), "interpolation factor:", 1./max(value))
+                                
+                                if isinstance(args.interpolated, dict):
+                                    if args.interpolated[args.name[models_variable_name[model]["model_idx"]+jdx]] == 0:
+                                        args.interpolated[args.name[models_variable_name[model]["model_idx"]+jdx]] = 1./max(value)
+                                    value *= args.interpolated[args.name[models_variable_name[model]["model_idx"]+jdx]] #/= max(value)
 
-                                p = plot_HAM(value, args.name[models_variable_name[model]["model_idx"]+jdx], idx)
+                                p = plot_HAM(value, args.name[models_variable_name[model]["model_idx"]+jdx], idx, plot_colors_per_model)
                                 if args.name[models_variable_name[model]["model_idx"]+jdx] in legend_list:
                                     legend_list[args.name[models_variable_name[model]["model_idx"]+jdx]].append(p)
                                 else:
                                     legend_list[args.name[models_variable_name[model]["model_idx"]+jdx]] = [p]
-                    else:
+                        else:
+                            
                             values = np.array(values).mean(axis=0)
+                            if cutoff_type == "forward":
+                                print (model, "max value:", max(values), "interpolation factor:", 1./max(values))
+                            
+                            if isinstance(args.interpolated, dict):
+                                if args.interpolated[model] == 0:
+                                    args.interpolated[model] = 1./max(values)
+                                values *= args.interpolated[model]
+
                             if model != "SpaceTime":
-                                p = plot_HAM(values, model, idx)
+                                p = plot_HAM(values, model, idx, plot_colors_per_model)
                             else:
-                                p = plot_HAM(values, model, idx, loss_based_weights, h, cutoff_type)
+                                p = plot_HAM(values, model, idx, plot_colors_per_model, loss_based_weights, h, cutoff_type)
+
+                    else:
+                            if cutoff_type == "forward":
+                                print (model, "max value:", max(values), "interpolation factor:", 1./max(values))
+                            if isinstance(args.interpolated, dict):
+                                if args.interpolated[model] == 0:
+                                    args.interpolated[model] = 1./max(values)
+                                values *= args.interpolated[model]
+                            #values = np.array(values).mean(axis=0)
+                            if model != "SpaceTime":
+                                p = plot_HAM(values, model, idx, plot_colors_per_model)
+                            else:
+                                p = plot_HAM(values, model, idx, plot_colors_per_model, loss_based_weights, h, cutoff_type)
                     
                     if len(values.shape) > 1:
                         model_names_multiple = args.models[models_variable_name[model]["model_idx"]: models_variable_name[model]["model_idx"]+len(values)]
@@ -494,7 +542,7 @@ if __name__ == "__main__":
             if "gradnorms" in args.mode:
                 plt.legend([tuple(plots[model]) for model in plots], list(plots.keys()),
                         handler_map={tuple: HandlerTuple(ndivide=None)}, prop={"size": 10}, loc="best") #6})#, loc="top")
-
+        
         if "gradnorms" in args.mode:
             ax_top = ax.twiny()
             ax_top.set_xticks([])
@@ -533,6 +581,8 @@ if __name__ == "__main__":
                 common_name_str = args.name[0][:index]
             
             ylabel = "Gradient Norm Average" if args.name is None else "%s Gradient Norm Average" % common_name_str
+            if isinstance(args.interpolated, dict):
+                ylabel = "Interpolated " + ylabel
             ax.set_ylabel(ylabel, fontsize=10)
 
             if '=' in args.mode:
@@ -565,12 +615,16 @@ if __name__ == "__main__":
                 midpts_diff[model_name] = np.abs(diff).argmin()
             
             for idx, model_name in enumerate(sorted(midpts_diff.keys())):
-                plt.plot(midpts_diff[model_name], min_y, marker='o', markersize=3, color=plot_colors_per_model[idx])
+                plt.plot(midpts_diff[model_name], min_y, marker='o', markersize=3, 
+                            color=plot_colors_per_model[idx])
 
             plt.legend(prop={"size": 10}, loc="best")
             #plt.title("Difference between forward and backward mode gradient norm averages")
             plt.xlabel("Timestep h for subseries", fontsize=10)
             ylabel = "Difference at h [g(0→h) - g(h→%d)]" % h if args.name is None else "%s Difference at h [g(0→h) - g(h→%d)]" % (common_name_str, h)
+            
+            if isinstance(args.interpolated, dict):
+                ylabel = "Interpolated " + ylabel
             plt.ylabel(ylabel, fontsize=10)
             plt.title("Differences plots over %d models" % len(args.models), fontsize=10)
             
@@ -668,6 +722,9 @@ if __name__ == "__main__":
             plt.xlabel("Timesteps", fontsize=10)
             ylabel = "Signed Area w.r.t line of proportionality" if args.name is None else \
                      "%s Signed Area w.r.t line of proportionality" % common_name_str
+            
+            if isinstance(args.interpolated, dict):
+                ylabel = "Interpolated " + ylabel
             plt.ylabel(ylabel, fontsize=10)
             plt.title("Dotted Causal mode areas and Dashed Anti-Causal mode areas", fontsize=10)
             
@@ -728,7 +785,9 @@ if __name__ == "__main__":
         models_name = '_'.join(args.name)
     else:
         models_name = '_'.join(sorted(args.models))
-    plt.savefig("plots_/%s_%d_%s_midpts.pdf" % (gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
+
+    if args.interpolated is None:
+        plt.savefig("plots_/%s_%d_%s_midpts.pdf" % (gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
     #plt.show()
     
     fig, ax = plt.subplots()
@@ -829,6 +888,9 @@ if __name__ == "__main__":
     plt.xlabel("Fraction of Horizon", fontsize=10)
     ylabel = "Fraction of gradient norm average" if args.name is None else \
              "%s Fraction of gradient norm average" % common_name_str
+    
+    if isinstance(args.interpolated, dict):
+        ylabel = ylabel.replace("gradient", "interpolated gradient")
     plt.ylabel(ylabel, fontsize=10)
     if '=' in args.mode:
         if '(' in args.mode:
