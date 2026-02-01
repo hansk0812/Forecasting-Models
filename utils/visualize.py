@@ -20,6 +20,8 @@ warnings.filterwarnings("ignore")
 
 from scipy.interpolate import make_interp_spline
 
+import traceback
+
 # https://www.github.com/hanskrupakar/COCO-Style-Dataset-Generator-GUI 
 # (Trapezoid formula based shoelace (Gauss') formula)
 def find_poly_area(coords, h):
@@ -360,7 +362,7 @@ if __name__ == "__main__":
             bbox_pts[1][1] -= bbox_pts[1][1]*0.105
             bbox = Bbox(bbox_pts)
             
-            plt.savefig("plots_scores/gradnorms_%s_%d_batchsizes.pdf" % ('_'.join(args.models), h), dpi=300, bbox_inches=bbox)
+            plt.savefig("plots_/gradnorms_%s_%d_batchsizes.pdf" % ('_'.join(args.models), h), dpi=300, bbox_inches=bbox)
             
             plt.clf()
 
@@ -378,6 +380,7 @@ if __name__ == "__main__":
             poly_areas_pts = OrderedDict({k: {} for k in types})
 
         plot_diffs = OrderedDict()
+        point_plts = []
         for cutoff_type in types:
             
             fnames = sorted(glob.glob(os.path.join(args.folder, "*_%d_%s_%s.txt" % (
@@ -499,7 +502,7 @@ if __name__ == "__main__":
 
                             # DECISION: Interpolating one feature at a time gives very different plots (#TODO: Future Work)
                             if not '=' in args.mode:
-                                values = values.mean(axis=1)
+                                values = values.mean(axis=1)[:,np.newaxis]
                             else:
                                 values = values
 
@@ -899,9 +902,11 @@ if __name__ == "__main__":
             for idx, model in enumerate(poly_areas[cutoff_type].keys()):
                 plt.plot([0, len(poly_areas[cutoff_type][model])], [0, 0], color="black")
                 
+                #max_area = max([max(poly_areas[c][model]) for c in types])
                 area_plt_pair = []
                 for cutoff_type in types:
                     p, = plt.plot(np.arange(0, len(poly_areas[cutoff_type][model])),
+                               #poly_areas[cutoff_type][model] / max_area, label=model + "[%s→%s]" % (
                                poly_areas[cutoff_type][model], label=model + "[%s→%s]" % (
                                     "0" if cutoff_type=="forward" else "x",
                                     "x" if cutoff_type=="forward" else str(len(poly_areas[cutoff_type][model]))), 
@@ -913,20 +918,15 @@ if __name__ == "__main__":
                 area_plts.append(area_plt_pair)
                     
                 try:
-                    point_plts = []
                     if len(poly_areas_pts[cutoff_type][model]) > 0:
                         for pt in poly_areas_pts[cutoff_type][model]:
-                            p, = plt.plot(pt, poly_areas[cutoff_type][model][pt], 'o', markersize=3, 
+                            p, = plt.plot(pt[0], poly_areas[cutoff_type][model][int(pt[0])], 'o', markersize=3, 
                                             color=plot_colors_per_model[idx], label="Intersection with Line of Proportionality")
                             point_plts.append(p)
                 except Exception:
                     traceback.print_exc()
                     pass
                 
-                legend_labels.append(model)
-
-                area_plts.append(area_plt_pair)
-            
             if len(area_plts) > 0:
                 markers = [tuple(m) for m in zip(*area_plts)]
                 min_max_idxs = [np.argmin(args.start_color_idx), np.argmax(args.start_color_idx)]
