@@ -1,0 +1,9 @@
+torch
+torchvision
+scikit-learn
+pandas
+einops
+matplotlib
+opt_einsum
+git+https://github.com/hansk0812/xlstm-lhf.git
+statsmodels
