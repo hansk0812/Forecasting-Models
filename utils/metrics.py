@@ -38,3 +38,62 @@ def metric(pred, true):
     mspe = MSPE(pred, true)
 
     return mae, mse, rmse, mape, mspe
+
+# Weather dataset percentile-based low and high metrics separately
+# https://github.com/taohan10200/WEATHER-5K
+def SEDI(predicted_values, true_values, percentile):
+    percentile = percentile.numpy()
+    num_percentile = percentile.shape[-1]
+    weight = np.array([ [0.5,0.5],
+                        [0.5,0.5],
+                        [0.5,0.5], # ignore wind direction actually
+                        [0,   1],  # wind speed
+                        [0.5,0.5]
+                      ])
+    gt_events_list = []
+    pred_events_list = []
+
+    for i in range(num_percentile // 2):
+        gt_events_low = (true_values < percentile[:,:,:,i])
+        pred_events_low = np.sum(np.logical_and(predicted_values< percentile[:,:,:,i], gt_events_low),axis=(0,1))
+
+        gt_events_high = (true_values > percentile[:,:,:, num_percentile-1-i])
+        pred_events_high = np.sum(np.logical_and(predicted_values > percentile[:,:,:,num_percentile-1-i], gt_events_high),axis=(0,1))
+
+        gt_events = np.sum(gt_events_low,axis=(0,1))+ np.sum(gt_events_high,axis=(0,1))
+
+        gt_events_list.append(gt_events)
+        pred_events_list.append(pred_events_high + pred_events_low)
+
+    return np.array(pred_events_list), np.array(gt_events_list)
+
+
+class WeatherMetricsCalculator:
+    def __init__(self, num_features, metric_fns):
+        self.mae = np.zeros(num_features)  # 各个变量的 MAE
+        self.mse = np.zeros(num_features)  # 各个变量的 MSE
+        self.SEDI_pred = np.zeros((4,num_features))
+        self.SEDI_gt = np.zeros((4,num_features))
+        self.count = 0
+
+    def update(self, predicted_values, true_values, percentile=None):
+        absolute_errors = np.abs(predicted_values - true_values)
+        squared_errors = np.square(predicted_values - true_values)
+
+        self.mae += np.mean(absolute_errors, axis=(0, 1))
+        self.mse += np.mean(squared_errors, axis=(0, 1))
+
+        pred_events, gt_events = SEDI(predicted_values, true_values, percentile)
+        self.SEDI_pred +=pred_events
+        self.SEDI_gt += gt_events
+        # print(self.SEDI_pred/self.SEDI_gt)
+        # import pdb
+        # pdb.set_trace()
+        self.count += 1
+
+    def get_metrics(self):
+        avg_mae = self.mae / self.count
+        avg_mse = self.mse / self.count
+        SEDI = self.SEDI_pred / self.SEDI_gt
+        return avg_mae, avg_mse, SEDI
+

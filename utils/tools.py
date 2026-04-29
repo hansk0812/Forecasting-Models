@@ -79,13 +79,19 @@ class StandardScaler():
         return (data * self.std) + self.mean
 
 
-def visual(true, preds=None, name='./pic/test.pdf'):
+def visual(true, preds=None, name='./pic/test.pdf', vname=None):
     """
     Results visualization
     """
-    plt.figure()
-    plt.plot(true, label='GroundTruth', linewidth=2)
-    if preds is not None:
-        plt.plot(preds, label='Prediction', linewidth=2)
-    plt.legend()
-    plt.savefig(name, bbox_inches='tight')
+    num_figs = true.shape[-1]
+    fig, axes = plt.subplots(nrows=num_figs//3 + 1, ncols=3)
+    for i in range(true.shape[-1]//3 + 1):
+        for j in range(3):
+            if i*3 + j < num_figs:
+                axes[i][j].plot(true[:, i*3 + j], label='GroundTruth', linewidth=2)
+                if not preds is None:
+                    axes[i][j].plot(preds[:, i*3 + j], label='Prediction', linewidth=2, linestyle='dotted')
+                axes[i][j].set_title(vname[i*3 + j] if vname is not None else "Variable %d" % i*3 + j)
+                axes[i][j].legend()
+    plt.tight_layout()
+    plt.savefig(name, bbox_inches='tight', dpi=300)
