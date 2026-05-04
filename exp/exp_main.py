@@ -672,7 +672,7 @@ class Exp_Main(Exp_Basic):
 
         colors = np.array(cmap(np.linspace(0., 1., self.args.pred_len+1)))
         
-        if "Weather" in self.args.data:
+        if "Weather_Station" in self.args.data:
             weather_metrics = WeatherMetricsCalculator()
 
         with torch.no_grad() if self.args.inspect_backward_pass is None else torch.enable_grad():
@@ -842,7 +842,7 @@ class Exp_Main(Exp_Basic):
 #                                                                        grad_norms_per_timestep["forward"][idx].mean()))
 #                    exit()
                 
-                if "Weather" in self.args.data:
+                if "Weather_Station" in self.args.data:
                     weather_metrics.update(pred, true, percentile)
                 else:
                     preds.append(pred)
@@ -854,7 +854,7 @@ class Exp_Main(Exp_Basic):
                     gt = np.concatenate((input[0, :, :], true[0, :, :]), axis=0)
                     pd = np.concatenate((input[0, :, :], pred[0, :, :]), axis=0)
                     
-                    if "Weather" in self.args.data:
+                    if "Weather_Station" in self.args.data:
                         visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'), test_data.vnames)
                     else:
                         visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
@@ -873,7 +873,7 @@ class Exp_Main(Exp_Basic):
                 print ("Autocorrelation for %s gt:" % self.args.model, np.array(autocorrs)[:,:,1:2,:].mean(axis=(0,1,2)))
                 exit()
  
-        if not metric_avg and not "Weather" in self.args.data:
+        if not metric_avg and not "Weather_Station" in self.args.data:
             preds = np.concatenate(preds, axis=0)
             trues = np.concatenate(trues, axis=0)
             print('test shape:', preds.shape, trues.shape)
@@ -915,9 +915,8 @@ class Exp_Main(Exp_Basic):
         
         plt.rcParams["figure.figsize"] = 5,2
         
-        for s in [0]:
-            start=s
-            x = np.linspace(start,720,num=720-start)
+        for start in [0]:
+            x = np.linspace(start, self.args.pred_len, num=self.args.pred_len-start)
             
             if not metric_avg:
                 y = np.mean((preds-trues)**2, axis=(0,2))[start:]
