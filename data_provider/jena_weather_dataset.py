@@ -44,7 +44,7 @@ class Dataset_Weather(Dataset):
         if data_path == '1':
             self.vars = ["p (mbar)", "T (degC)", "sh (g/kg)", 
                          "H2OC (mmol/mol)", "rho (g/m**3)", "wv (m/s)", 
-                         "wd (deg)", "PAR (�mol/m�/s)", "CO2 (ppm)"]
+                         "wd (deg)", "PAR (�mol/m�/s)"] #, "CO2 (ppm)"] --> NaN values
 
         elif data_path == '2':
             self.vars = ["p (mbar)", "T (degC)", "sh (g/kg)", 
@@ -66,8 +66,11 @@ class Dataset_Weather(Dataset):
         self.__read_data__()
     
     def folder_to_df(self, csv_files):
-
-        recent_idx = csv_files.index(os.path.join(self.root_path, "mpi_roof.csv"))
+        
+        if "mpi_roof" in csv_files[0]:
+            recent_idx = csv_files.index(os.path.join(self.root_path, "mpi_roof.csv"))
+        else:
+            recent_idx = csv_files.index(os.path.join(self.root_path, "mpi_saale.csv"))
 
         temp_fname = csv_files[-1]
         csv_files[-1] = csv_files[recent_idx]
@@ -79,10 +82,11 @@ class Dataset_Weather(Dataset):
         for fname in csv_files:
             if df_raw is None:
                 df_raw = pd.read_csv(fname, encoding="cp1250")
-                common_ascii = "PAR"
-                diff_encoding_column = [x for x in df_raw.columns if common_ascii in x][0]
-                var_idx = [idx for idx, v in enumerate(self.vars) if common_ascii in v][0]
-                self.vars[var_idx] = diff_encoding_column
+                if self.data_path == '1':
+                    common_ascii = "PAR"
+                    diff_encoding_column = [x for x in df_raw.columns if common_ascii in x][0]
+                    var_idx = [idx for idx, v in enumerate(self.vars) if common_ascii in v][0]
+                    self.vars[var_idx] = diff_encoding_column
             else:
                 df_raw = pd.concat([df_raw, pd.read_csv(fname, encoding="cp1250")], ignore_index=True)
         
@@ -202,9 +206,9 @@ class Dataset_Weather(Dataset):
             self.data_stamp = data_stamp
             self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0][0]*nf:indices[0][1]*nf]
             
-            self.data_x = pd.concat([self.data_x, data2[indices[1][0]*nf:indices[1][1]*nf]], ignore_index=True)
-            self.data_y = pd.concat([self.data_y, data2[indices[1][0]*nf:indices[1][1]*nf]], ignore_index=True)
-            self.data_stamp = pd.concat([self.data_stamp, data_stamp2], ignore_index=True)
+            self.data_x = np.concatenate([self.data_x, data2[indices[1][0]*nf:indices[1][1]*nf]], axis=0)
+            self.data_y = np.concatenate([self.data_y, data2[indices[1][0]*nf:indices[1][1]*nf]], axis=0)
+            self.data_stamp = np.concatenate([self.data_stamp, data_stamp2], axis=0)
             self.cycle_index = np.concatenate([self.cycle_index, 
                                 (np.arange(len(data2)) % self.cycle)[indices[1][0]*nf:indices[1][1]*nf]], axis=-1)
         
