@@ -61,6 +61,8 @@ class Dataset_ETT_hour(Dataset):
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
             nf=1
+        self.num_features = nf
+        
         if self.scale:
             train_data = df_data[border1s[0]:border2s[0]]
             self.scaler.fit(train_data.values)
@@ -83,6 +85,9 @@ class Dataset_ETT_hour(Dataset):
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
         self.data_stamp = data_stamp
+
+    def get_num_features(self):
+        return self.num_features
 
     def __getitem__(self, index):
         s_begin = index
@@ -159,7 +164,8 @@ class Dataset_ETT_minute(Dataset):
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
             nf=1
-        
+        self.num_features = nf
+
         if self.scale == "zscore":
             train_data = df_data[border1s[0]:border2s[0]*nf]
             self.scaler.fit(train_data.values)
@@ -192,6 +198,9 @@ class Dataset_ETT_minute(Dataset):
         print ("Dataset total number of timesteps: %d" % len(data))
         print ("Dataset length: %d" % len(self))
     
+    def get_num_features(self):
+        return self.num_features
+
     def __getitem__(self, index):
         s_begin = index
         s_end = s_begin + self.seq_len
@@ -362,8 +371,11 @@ class Dataset_Pred(Dataset):
         if self.features == 'M' or self.features == 'MS':
             cols_data = df_raw.columns[1:]
             df_data = df_raw[cols_data]
+            nf = len(cols_data)
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
+            nf = 1
+        self.num_features = nf
 
         if self.scale:
             self.scaler.fit(df_data.values)
@@ -411,6 +423,9 @@ class Dataset_Pred(Dataset):
         seq_y_mark = self.data_stamp[r_begin:r_end]
 
         return seq_x, seq_y, seq_x_mark, seq_y_mark
+
+    def get_num_features(self):
+        return self.num_features
 
     def __len__(self):
         return len(self.data_x) - self.seq_len + 1

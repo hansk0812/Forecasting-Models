@@ -41,18 +41,21 @@ class Dataset_Weather(Dataset):
         
         # Chosen without considerations in environmental sciences, change if necessary
         # If adding a column name that uses the encoding, please change the column name using ascii in folder_to_df()
-        if data_path == '1':
-            self.vars = ["p (mbar)", "T (degC)", "sh (g/kg)", 
-                         "H2OC (mmol/mol)", "rho (g/m**3)", "wv (m/s)", 
-                         "wd (deg)", "PAR (�mol/m�/s)"] #, "CO2 (ppm)"] --> NaN values
+        if features == 'M':
+            if data_path == '1':
+                self.vars = ["p (mbar)", "T (degC)", "sh (g/kg)", 
+                             "H2OC (mmol/mol)", "rho (g/m**3)", "wv (m/s)", 
+                             "wd (deg)", "PAR (�mol/m�/s)"] #, "CO2 (ppm)"] --> NaN values
 
-        elif data_path == '2':
-            self.vars = ["p (mbar)", "T (degC)", "sh (g/kg)", 
-                         "H2OC (mmol/mol)", "rho (g/m**3)", "wv (m/s)", 
-                         "wd (deg)"]
-        else:
-            raise NotImplementedError
+            elif data_path == '2':
+                self.vars = ["p (mbar)", "T (degC)", "sh (g/kg)", 
+                             "H2OC (mmol/mol)", "rho (g/m**3)", "wv (m/s)", 
+                             "wd (deg)"]
+            else:
+                raise NotImplementedError
         
+        else:
+            self.vars = [target]
         self.features = features
         self.target = target
         self.scale = scale
@@ -214,6 +217,9 @@ class Dataset_Weather(Dataset):
         
         print ("Dataset total number of timesteps: %d" % len(self.data_x))
         print ("Dataset length: %d" % len(self))
+    
+    def get_num_features(self):
+        return len(self.vars)
     
     def __getitem__(self, index):
         s_begin = index

@@ -46,8 +46,10 @@ class Dataset_Weather_Stations_ALL(Dataset):
         type_map = {'train': 0, 'val': 1, 'test': 2}
         self.set_type = type_map[flag]
         
-        self.vnames = ['Temperature', 'Dewpoint', 'Wind Angle', 'Wind Rate', 'Sea-level Pressure'] 
-        
+        if features == 'M':
+            self.vnames = ['Temperature', 'Dewpoint', 'Wind Angle', 'Wind Rate', 'Sea-level Pressure'] 
+        else:
+            self.vnames = [target]
         print ("args.target", target)
 
         self.features = features
@@ -214,6 +216,9 @@ class Dataset_Weather_Stations_ALL(Dataset):
 
         return seq_x, cycle_x
 
+    def get_num_features(self):
+        return len(self.vnames)
+    
     def __len__(self):
         # return len(self.data_x) - self.seq_len - self.pred_len + 1
         return self.num_timestamp_input

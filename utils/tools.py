@@ -91,7 +91,7 @@ def visual(true, preds=None, name='./pic/test.pdf', vname=None):
                 axes[i][j].plot(true[:, i*3 + j], label='GroundTruth', linewidth=2)
                 if not preds is None:
                     axes[i][j].plot(preds[:, i*3 + j], label='Prediction', linewidth=2, linestyle='dotted')
-                axes[i][j].set_title(vname[i*3 + j] if vname is not None else "Variable %d" % i*3 + j)
+                axes[i][j].set_title(vname[i*3 + j] if vname is not None else "Variable %d" % (i*3 + j))
                 axes[i][j].legend()
     plt.tight_layout()
     plt.savefig(name, bbox_inches='tight', dpi=300)

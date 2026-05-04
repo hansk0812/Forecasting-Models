@@ -594,7 +594,10 @@ class Exp_Main(Exp_Basic):
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
         print ('GPU availability for test:', torch.cuda.is_available())
-        self.model.to(torch.device('cuda'))
+        try:
+            self.model.to(torch.device('cuda'))
+        except Exception:
+            pass
 
         return self.model
 
@@ -848,8 +851,8 @@ class Exp_Main(Exp_Basic):
                 if i % 20 == 0 and not metric_avg:
                     
                     input = batch_x.detach().cpu().numpy()
-                    gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
-                    pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
+                    gt = np.concatenate((input[0, :, :], true[0, :, :]), axis=0)
+                    pd = np.concatenate((input[0, :, :], pred[0, :, :]), axis=0)
                     
                     if "Weather" in self.args.data:
                         visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'), test_data.vnames)

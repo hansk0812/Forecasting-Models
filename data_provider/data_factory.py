@@ -1,6 +1,6 @@
 from data_provider.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred
 from data_provider import Dataset_Weather_Stations, Dataset_Weather_Stations_ALL
-from data_provider import Dataset_Weather
+from data_provider import Dataset_Weather, Dataset_Yahoo_Finance
 
 from data_provider.sampler import MyRandomSampler
 
@@ -16,6 +16,8 @@ data_dict = {
 	'Dataset_Weather_Stations_ALL': Dataset_Weather_Stations_ALL,
 	
     'JenaWeather': Dataset_Weather,
+
+    'YahooFinance': Dataset_Yahoo_Finance,
 
 	'custom': Dataset_Custom,
 }

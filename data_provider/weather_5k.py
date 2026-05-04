@@ -26,7 +26,7 @@ from utils.tools import StandardScaler
 warnings.filterwarnings('ignore')
 class Dataset_Weather_Stations(Dataset):
     def __init__(self, root_path, flag='train', size=None, features='S', data_path=None,
-                 target='OT', scale=True, timeenc=0, freq='h', seasonal_patterns=None):
+                 target='Temperature', scale=True, timeenc=0, freq='h', seasonal_patterns=None):
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
@@ -43,7 +43,10 @@ class Dataset_Weather_Stations(Dataset):
         type_map = {'train': 0, 'val': 1, 'test': 2}
         self.set_type = type_map[flag]
         
-        self.vnames = ['Temperature', 'Dewpoint', 'Wind Angle', 'Wind Rate', 'Sea-level Pressure'] 
+        if features == 'M':
+            self.vnames = ['Temperature', 'Dewpoint', 'Wind Angle', 'Wind Rate', 'Sea-level Pressure'] 
+        else:
+            self.vnames = [target]
 
         self.features = features
         self.target = target
@@ -163,7 +166,10 @@ class Dataset_Weather_Stations(Dataset):
         num_threads = mp.cpu_count() 
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
             executor.map(self.registed_shared_data, station_indexs)
-            
+    
+    def get_num_features(self):
+        return len(self.vnames)
+
     def __getitem__(self, indexs):
         # import time
         # st = time.time()

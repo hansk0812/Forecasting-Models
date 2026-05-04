@@ -14,5 +14,5 @@ stocks = ["AAPL", "MCD", "ABT", "MSFT", "AEM", "ORCL",
 
 for stock in stocks:
     if not os.path.exists("./%s.csv" % stock):
-        data = yf.download(stock, period="10y")
+        data = yf.download(stock, start="1996-07-26", end="2026-05-03") #period="10y")
         data.to_csv("./%s.csv" % stock)
