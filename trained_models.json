@@ -1,5 +1,5 @@
 {
-    "zoo_path": "/home/hans/PhD/lhf_review_git/LHF-Model-Zoo-ETTm2/",
+    "zoo_path": "/home/csis/Forecasting-Models/Long Horizon Forecasting Model Zoo over ETTm2/LHF-Model-Zoo-ETTm2/",
     "models": {
         "M": {
             "FEDformer": {
@@ -704,54 +704,54 @@
             },
             "CycleNet": {
                 "96": {
-                  "features": "S",
+                  "features": "M",
                   "seq_len": 96,
                   "label_len": 48,
                   "pred_len": 96,
                   "d_model": 256,
                   "factor": 64,
-                  "enc_in": 1,
-                  "dec_in": 1,
-                  "c_out": 1,
+                  "enc_in": 7,
+                  "dec_in": 7,
+                  "c_out": 7,
                   "e_layers": 2,
                   "d_layers": 1
                 },
                  "192": {
-                  "features": "S",
+                  "features": "M",
                   "seq_len": 192,
                   "label_len": 48,
                   "pred_len": 192,
                   "d_model": 256,
                   "factor": 64,
-                  "enc_in": 1,
-                  "dec_in": 1,
-                  "c_out": 1,
+                  "enc_in": 7,
+                  "dec_in": 7,
+                  "c_out": 7,
                   "e_layers": 2,
                   "d_layers": 1
                 },
                  "336": {
-                  "features": "S",
+                  "features": "M",
                   "seq_len": 336,
                   "label_len": 48,
                   "pred_len": 336,
                   "d_model": 256,
                   "factor": 64,
-                  "enc_in": 1,
-                  "dec_in": 1,
-                  "c_out": 1,
+                  "enc_in": 7,
+                  "dec_in": 7,
+                  "c_out": 7,
                   "e_layers": 2,
                   "d_layers": 1
                 },
                  "720": {
-                  "features": "S",
+                  "features": "M",
                   "seq_len": 720,
                   "label_len": 48,
                   "pred_len": 720,
                   "d_model": 256,
                   "factor": 64,
-                  "enc_in": 1,
-                  "dec_in": 1,
-                  "c_out": 1,
+                  "enc_in": 7,
+                  "dec_in": 7,
+                  "c_out": 7,
                   "e_layers": 2,
                   "d_layers": 1
                 }

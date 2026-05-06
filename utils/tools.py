@@ -88,10 +88,18 @@ def visual(true, preds=None, name='./pic/test.pdf', vname=None):
     for i in range(true.shape[-1]//3 + 1):
         for j in range(3):
             if i*3 + j < num_figs:
-                axes[i][j].plot(true[:, i*3 + j], label='GroundTruth', linewidth=2)
-                if not preds is None:
-                    axes[i][j].plot(preds[:, i*3 + j], label='Prediction', linewidth=2, linestyle='dotted')
-                axes[i][j].set_title(vname[i*3 + j] if vname is not None else "Variable %d" % (i*3 + j))
-                axes[i][j].legend()
+                if num_figs//3 == 0:
+                    axes[j].plot(true[:, i*3 + j], label='GroundTruth', linewidth=2)
+                    if not preds is None:
+                        axes[j].plot(preds[:, i*3 + j], label='Prediction', linewidth=2, linestyle='dotted')
+                    axes[j].set_title(vname[i*3 + j] if vname is not None else "Variable %d" % (i*3 + j))
+                    axes[j].legend()
+                else:
+                    axes[i][j].plot(true[:, i*3 + j], label='GroundTruth', linewidth=2)
+                    if not preds is None:
+                        axes[i][j].plot(preds[:, i*3 + j], label='Prediction', linewidth=2, linestyle='dotted')
+                    axes[i][j].set_title(vname[i*3 + j] if vname is not None else "Variable %d" % (i*3 + j))
+                    axes[i][j].legend()
+
     plt.tight_layout()
     plt.savefig(name, bbox_inches='tight', dpi=300)

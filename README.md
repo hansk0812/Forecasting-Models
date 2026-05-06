@@ -1,5 +1,11 @@
 ### Code patterns similar to Informer et al.
 
+### To clone the repository without the Nifty dataset, use:
+```
+GIT_LFS_SKIP_SMUDGE=1 git clone https://www.github.com/hansk0812/Forecasting-Models.git
+git checkout lhf
+```
+
 ### This repository supports the following datasets:
 
 ETT: https://www.github.com/MAZiqing/FEDformer

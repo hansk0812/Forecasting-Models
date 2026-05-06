@@ -1,0 +1,43 @@
+import argparse
+import os, glob
+
+import numpy as np
+
+from matplotlib import pyplot as plt
+import matplotlib
+matplotlib.use("tkAgg")
+
+if __name__ == "__main__":
+    
+    ap = argparse.ArgumentParser()
+    ap.add_argument("folder", help="Directory with saved npy files for std calculations")
+    ap.add_argument("dataset", help="Name of dataset")
+    ap.add_argument("model", help="Name of model")
+    ap.add_argument("horizon_size", help="Size of forecast horizon", type=int)
+    args = ap.parse_args()
+
+    files = glob.glob(os.path.join(args.folder, "%s_%s_%d_*" % (args.dataset, args.model, args.horizon_size)))
+
+    assert len(files) >= 5, "At least 5 runs needed for visualization"
+    
+    error_vals = []
+    for fl in files:
+        with open(fl, "rb") as f:
+            err = np.load(f)
+            error_vals.append(err)
+
+    error_vals = np.stack(error_vals)
+    
+    error_means = error_vals.mean(axis=0)
+    error_stds = error_vals.std(axis=0)
+
+    fig, ax = plt.subplots()
+
+    plt.plot(range(args.horizon_size), error_means, label="MSE Per Timestep")
+    plt.fill_between(range(args.horizon_size), error_means - error_stds, error_means + error_stds, 
+                     color='grey', alpha=0.7)
+    
+    plt.text(0.6, 0.05, "STD ∈ [%.2e, %.2e]" % (error_stds.min(), error_stds.max()), 
+             transform=ax.transAxes, fontsize=10)
+    plt.legend(fontsize=10)
+    plt.show()

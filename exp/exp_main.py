@@ -1,4 +1,6 @@
 import os
+import glob
+
 import time
 import warnings
 import numpy as np
@@ -45,6 +47,20 @@ from tqdm import tqdm
 from decimal import Decimal
 
 warnings.filterwarnings('ignore')
+
+def seed_everything(seed=42):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed) # if you are using multi-GPU.
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
+import random
+import time
+seed_everything(int(time.time()))
 
 class BackwardPassInspectLoss(nn.Module):
 
@@ -269,7 +285,11 @@ class Exp_Main(Exp_Basic):
             os.makedirs(path)
 
         if not self.args.load_from_chkpt is None:
-            state_dict = torch.load(self.args.load_from_chkpt)
+            try:
+                state_dict = torch.load(self.args.load_from_chkpt)
+            except Exception:
+                state_dict = torch.load(self.args.load_from_chkpt, map_location="cpu")
+
             self.model.load_state_dict(state_dict)
 
         import time
@@ -915,6 +935,17 @@ class Exp_Main(Exp_Basic):
         
         plt.rcParams["figure.figsize"] = 5,2
         
+        if not os.path.isdir("error_heatmap_std"):
+            os.mkdir("error_heatmap_std")
+            heatmap_idx = 0
+        else:
+            heatmaps = glob.glob(os.path.join("error_heatmap_std", "*%s*" % self.args.model))
+            if len(heatmaps) == 0:
+                heatmap_idx = 0
+            else:
+                heatmaps = sorted([int(x.split('_')[-1].split('.')[0]) for x in heatmaps])
+                heatmap_idx = heatmaps[-1] + 1
+
         for start in [0]:
             x = np.linspace(start, self.args.pred_len, num=self.args.pred_len-start)
             
@@ -922,6 +953,7 @@ class Exp_Main(Exp_Basic):
                 y = np.mean((preds-trues)**2, axis=(0,2))[start:]
             else:
                 y = mse.mean(dim=0).cpu().numpy()
+
             fig, (ax,ax2) = plt.subplots(nrows=2, sharex=True)
 
             extent = [x[0]-(x[1]-x[0])/2., x[-1]+(x[1]-x[0])/2.,0,1]
@@ -929,10 +961,11 @@ class Exp_Main(Exp_Basic):
             ax.set_yticks([])
             ax.set_xlim(extent[0], extent[1])
 
+            np.save(os.path.join("error_heatmap_std", "%s_%s_%d_%s" % (self.args.data, self.args.model, self.args.pred_len, heatmap_idx)), y)
             ax2.plot(x,y)
 
             plt.tight_layout()
-            plt.savefig("%s_%s_heatmap_720_M.pdf" % (self.args.data, self.args.model), dpi=300, bbox_inches="tight")
+            plt.savefig("%s_%s_heatmap_%d_M.pdf" % (self.args.data, self.args.model, self.args.pred_len), dpi=300, bbox_inches="tight")
 
         return
 
