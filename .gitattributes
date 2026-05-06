@@ -1,0 +1,1 @@
+dataset/NIFTYStocks/nifty_v2_.csv filter=lfs diff=lfs merge=lfs -text
