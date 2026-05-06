@@ -31,13 +31,19 @@ if __name__ == "__main__":
     error_means = error_vals.mean(axis=0)
     error_stds = error_vals.std(axis=0)
 
-    fig, ax = plt.subplots()
+    fig, (ax1, ax2) = plt.subplots(nrows=2, sharex=True)
+    
+    x = np.arange(1, args.horizon_size + 1, 1)
+    extent = [x[0] - (x[1] - x[0]) / 2., x[-1] + (x[1] - x[0]) / 2., 0, 1]
+    ax1.imshow(error_means[np.newaxis, :], cmap="inferno", aspect="auto", extent=extent)
+    ax1.set_yticks([])
+    ax1.set_xlim(extent[0], extent[1])
 
-    plt.plot(range(args.horizon_size), error_means, label="MSE Per Timestep")
-    plt.fill_between(range(args.horizon_size), error_means - error_stds, error_means + error_stds, 
+    ax2.plot(range(1, args.horizon_size + 1), error_means, label="MSE Per Timestep")
+    ax2.fill_between(range(1, args.horizon_size + 1), error_means - error_stds, error_means + error_stds, 
                      color='grey', alpha=0.7)
     
-    plt.text(0.6, 0.05, "STD ∈ [%.2e, %.2e]" % (error_stds.min(), error_stds.max()), 
-             transform=ax.transAxes, fontsize=10)
-    plt.legend(fontsize=10)
+    ax2.text(0.6, 0.05, "STD ∈ [%.2e, %.2e]" % (error_stds.min(), error_stds.max()), 
+             transform=ax2.transAxes, fontsize=10)
+    ax2.legend(fontsize=10)
     plt.show()
