@@ -36,11 +36,20 @@ class Model(nn.Module):
 		if self.model_type == 'linear':
 			self.model = nn.Linear(self.seq_len, self.pred_len)
 		elif self.model_type == 'mlp':
-			self.model = nn.Sequential(
-				nn.Linear(self.seq_len, self.d_model),
-				nn.ReLU(),
-				nn.Linear(self.d_model, self.pred_len)
-			)
+            
+            layers = []
+            for idx in range(configs.e_layers):
+                if idx == 0:
+                    layers.extend([nn.Linear(self.seq_len, self.d_model), nn.ReLU()])
+                else:
+                    layers.extend([nn.Linear(self.d_model, self.d_model), nn.ReLU()])
+            for idx in range(configs.d_layers):
+                if idx == configs.d_layers - 1:
+                    layers.extend([nn.Linear(self.d_model, self.pred_len)])
+                else:
+                    layers.extend([nn.Linear(self.d_model, self.d_model), nn.ReLU()])
+
+            self.model = nn.Sequential(*layers)
 
 	def forward(self, x, cycle_index):
 		# x: (batch_size, seq_len, enc_in), cycle_index: (batch_size,)
