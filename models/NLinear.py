@@ -50,15 +50,32 @@ class Model(nn.Module):
         if moving_avg_window % 2 == 0:
             raise Exception("moving_avg_window should be uneven")
 
-        self.c_out = 1 if config.features=='S' else 7
+        self.c_out = 1 if config.features=='S' else int(config.c_out)
         self.output_attention = False
 
         # Decomposition
         self.decomp = SeriesDecomp(moving_avg_window)
 
-        self.linear = nn.Linear(
-            self.c_out * self.input_size, self.c_out * self.h, bias=True
-        )
+        print ("Encoder layers %d, Decoder layers %d" % (config.e_layers, config.d_layers))
+        if config.e_layers + config.d_layers == 1:
+            self.linear = nn.Linear(
+                self.c_out * self.input_size, self.c_out * self.h, bias=True
+            )
+        else:
+            layers = []
+            for idx in range(config.e_layers):
+                if idx == 0:
+                    layers.extend([nn.Linear(self.c_out * self.input_size, config.d_model, bias=True), nn.ReLU()])
+                else:
+                    layers.extend([nn.Linear(config.d_model, config.d_model, bias=True), nn.ReLU()])
+            for idx in range(config.d_layers):
+                if idx == config.d_layers - 1:
+                    layers.extend([nn.Linear(config.d_model, self.c_out * self.h, bias=True)])
+                else:
+                    layers.extend([nn.Linear(config.d_model, config.d_model, bias=True), nn.ReLU()])
+            self.linear = nn.Sequential(*layers)
+        
+        print (self.linear)
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec,
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None):

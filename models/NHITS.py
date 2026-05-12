@@ -223,7 +223,7 @@ class Model(nn.Module):
 
         self.h = config.pred_len
         input_size = config.seq_len
-        self.c_in = 1 if config.features=='S' or config.features=="SM" else 7
+        self.c_in = 1 if config.features=='S' or config.features=="SM" else int(config.enc_in)
         
         stack_types: list = ["identity", "identity", "identity"]
         n_blocks: list = [1, 1, 1]
@@ -238,7 +238,7 @@ class Model(nn.Module):
         # Architecture
         blocks = self.create_stack(
             h=self.h,
-            input_size=input_size,
+            input_size=input_size if config.features!='M' else input_size*self.c_in,
             stack_types=stack_types,
             futr_input_size=0,
             hist_input_size=0,
