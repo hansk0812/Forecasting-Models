@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 
@@ -50,18 +52,57 @@ class Model(nn.Module):
         if moving_avg_window % 2 == 0:
             raise Exception("moving_avg_window should be uneven")
 
-        self.c_out = 1 if config.features=='S' else 7
+        self.c_out = 1 if config.features=='S' else int(config.enc_in)
         self.output_attention = False
 
         # Decomposition
         self.decomp = SeriesDecomp(moving_avg_window)
+        
+        if (config.e_layers + config.d_layers) == 1:
 
-        self.linear_trend = nn.Linear(
-            self.input_size * self.c_out, self.c_out * self.h, bias=True
-        )
-        self.linear_season = nn.Linear(
-            self.input_size * self.c_out, self.c_out * self.h, bias=True
-        )
+            chkpt_path = glob.glob(os.path.join("checkpoints", "%s_%s_%s_modes%d_%s_ft%s_sl%d_ll%d_pl%d_dm%d_nh%d_el%d_dl%d_df%d_fc%d_eb%s_dt%s_%s_0" % (
+        config.task_id.split("0.")[0] + '*', config.model, config.mode_select, config.modes, config.data, config.features, config.seq_len, config.label_len,
+        config.pred_len, config.d_model, config.n_heads, config.e_layers, config.d_layers, 
+        config.d_ff, config.factor, config.embed, config.distil, config.des.split("0.")[0] + '*')))
+            if len(chkpt_path) > 0:
+                print ("Checkpoint %s exists! Exiting!" % chkpt_path)
+                exit()
+
+            self.linear_trend = nn.Linear(
+                self.input_size * self.c_out, self.c_out * self.h, bias=True
+            )
+            self.linear_season = nn.Linear(
+                self.input_size * self.c_out, self.c_out * self.h, bias=True
+            )
+        else:
+            trend, season = [], []
+            for idx in range(config.e_layers):
+                if idx == 0:
+                    trend.extend([nn.Linear(
+                        self.input_size * self.c_out, config.d_model, bias=True),
+                                  nn.Dropout(config.dropout)])
+                    season.extend([nn.Linear(
+                           self.input_size * self.c_out, config.d_model, bias=True),
+                                  nn.Dropout(config.dropout)])
+                else:
+                    trend.extend([nn.Linear(
+                        config.d_model, config.d_model, bias=True),
+                                  nn.Dropout(config.dropout)])
+                    season.extend([nn.Linear(
+                        self.input_size * self.c_out, config.d_model, bias=True),
+                                  nn.Dropout(config.dropout)])
+
+            for idx in range(config.d_layers):
+                if idx == config.d_layers - 1:
+                    trend.append(nn.Linear(config.d_model, self.c_out * self.h, bias=True))
+                    season.append(nn.Linear(config.d_model, self.c_out * self.h, bias=True))
+                else:
+                    trend.extend([nn.Linear(config.d_model, config.d_model, bias=True),
+                                  nn.Dropout(config.dropout)])
+                    season.extend([nn.Linear(config.d_model, config.d_model, bias=True),
+                                  nn.Dropout(config.dropout)])
+            self.linear_trend = nn.Sequential(*trend)
+            self.linear_season = nn.Sequential(*season)
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec,
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None):

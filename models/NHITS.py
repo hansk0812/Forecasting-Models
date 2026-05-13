@@ -225,8 +225,8 @@ class Model(nn.Module):
         input_size = config.seq_len
         self.c_in = 1 if config.features=='S' or config.features=="SM" else int(config.enc_in)
         
-        stack_types: list = ["identity", "identity", "identity"]
-        n_blocks: list = [1, 1, 1]
+        stack_types: list = ["identity"] * (config.e_layers + config.d_layers)
+        n_blocks: list = [1] * (config.e_layers + config.d_layers)
         mlp_units: list = (config.e_layers + config.d_layers) * [[config.d_model, config.d_model]]
         n_pool_kernel_size: list = [int(x) for x in config.moving_avg[1:-1].split(',')] #[2, 1, 1]
         n_freq_downsample: list = [int(x) for x in config.detail_freq[1:-1].split(',')] #[64, 32, 8]

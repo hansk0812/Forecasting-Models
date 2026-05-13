@@ -98,18 +98,18 @@ class Model(nn.Module):
         # Inherit BaseWindows class
         super().__init__()
 
-        self.c_in = 1 if config.features=='S' else 7
+        self.c_in = 1 if config.features=='S' else int(config.enc_in)
         self.h = config.pred_len
         input_size = config.seq_len * config.c_out
 
         hidden_size = config.d_model
-        decoder_output_dim = config.label_len
-        temporal_decoder_dim = 128
-        dropout = 0.3
+        decoder_output_dim = config.c_out
+        temporal_decoder_dim = config.factor
+        dropout = config.dropout
         layernorm = True
-        num_encoder_layers = config.enc_in
-        num_decoder_layers = config.dec_in
-        temporal_width = config.factor
+        num_encoder_layers = config.e_layers
+        num_decoder_layers = config.d_layers
+        temporal_width = 0 #config.factor
         
         self.hist_exog_size = 0
         self.futr_exog_size = 0

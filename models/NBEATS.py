@@ -237,18 +237,18 @@ class Model(nn.Module):
         n_harmonics: int = 2
         n_polynomials: int = 2
         stack_types: list = ["identity", "identity", "identity"]
-        n_blocks: list = [1, 1, 1]
-        mlp_units: list = 3 * [[config.d_model, config.d_model]]
+        n_blocks: list = [1] * (config.e_layers + config.d_layers)
+        mlp_units: list = (config.e_layers + config.d_layers) * [[config.d_model, config.d_model]]
         dropout_prob_theta: float = 0.2 
         activation: str = "ReLU"
         shared_weights: bool = True
         
-        self.c_in = 1 if config.features=='S' or config.features == 'SM' else 7
+        self.c_in = 1 if config.features=='S' or config.features == 'SM' else int(config.enc_in)
 
         # Architecture
         blocks = self.create_stack(
             h=self.h,
-            input_size=self.input_size,
+            input_size=self.input_size if config.features!='M' else self.input_size * config.enc_in,
             stack_types=stack_types,
             n_blocks=n_blocks,
             mlp_units=mlp_units,
