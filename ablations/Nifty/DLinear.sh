@@ -1,7 +1,7 @@
 layers=("1 1" "2 2" "3 3" "4 3") #("0 1" "1 1" "2 1" "2 2" "3 2" "3 3" "4 3" "4 4" "4 5" "5 5")
-ma_window=(5 13 29)
+ma_window=(13) #(5 13 29)
 d_model=(256 384 512)
-drop=(0.05 0.2)
+drop=(0.05 0.2 0.3)
 
 
 if [[ -e ablations/Nifty/DLinear_ckpt.array ]]; then
