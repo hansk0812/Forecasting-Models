@@ -48,7 +48,7 @@ NIFTY Stocks Dataset: In this repository
 ### Use this to run the code:
 
 ```
-python run.py --root_path [ETT-small DIR PATH] --data_path ETTm2.csv --model [MODEL] --data ETTm2 --features [S,SM,M] --is_training 0 --pred_len [96,192,336,720] --enc_in [1,7] --dec_in [1,7] --c_out [1,7] --itr [N] --model_params_json trained_models.json
+python run.py --root_path [DATASET PATH] --data_path [DATASET FILE] --model [MODEL] --data [DATASET NAME] --features [S,SM,M] --is_training 0 --pred_len [HORIZON SIZE] --enc_in [NUM VARIATES] --dec_in [NUM VARIATES] --c_out [NUM VARIATES] --itr [N] --model_params_json trained_models.json
 ```
 
 If you found this repository useful, please consider citing: [https://arxiv.org/abs/2601.02094](https://arxiv.org/abs/2601.02094): Horizon Activation Mapping for Neural Networks in Time Series Forecasting
