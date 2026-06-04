@@ -18,8 +18,7 @@ Yahoo S&P 500 Stocks: https://github.com/ranaroussi/yfinance
 
 CA PEMS Traffic Occupancy: https://github.com/guoshnBJTU/ASTGNN 
 
-NASA POWER (Prediction Of Worldwide Energy Resources) Delhi (28°N, 77°E) AgroClimatology (AG): https://power.larc.nasa.gov/api/pages/#/Data%20Requests/
-daily_single_point_data_request_api_temporal_daily_point_get 
+NASA POWER (Prediction Of Worldwide Energy Resources) Delhi (28°N, 77°E) AgroClimatology (AG): https://power.larc.nasa.gov/api/pages/#/Data%20Requests/daily_single_point_data_request_api_temporal_daily_point_get 
 
 NIFTY Stocks Dataset: In this repository
 
