@@ -9,11 +9,18 @@ git checkout lhf
 ### This repository supports the following datasets:
 
 ETT: https://www.github.com/MAZiqing/FEDformer
+
 Weather-5k: https://github.com/taohan10200/WEATHER-5K
+
 Jena Weather: https://www.bgc-jena.mpg.de/wetter/weather_data.html
+
 Yahoo S&P 500 Stocks: https://github.com/ranaroussi/yfinance
+
 CA PEMS Traffic Occupancy: https://github.com/guoshnBJTU/ASTGNN 
-NASA POWER (Prediction Of Worldwide Energy Resources) Delhi (28°N, 77°E) AgroClimatology (AG): https://power.larc.nasa.gov/api/pages/#/Data%20Requests/daily_single_point_data_request_api_temporal_daily_point_get 
+
+NASA POWER (Prediction Of Worldwide Energy Resources) Delhi (28°N, 77°E) AgroClimatology (AG): https://power.larc.nasa.gov/api/pages/#/Data%20Requests/
+daily_single_point_data_request_api_temporal_daily_point_get 
+
 NIFTY Stocks Dataset: In this repository
 
 ### This repository supports the following models:
@@ -37,7 +44,7 @@ NIFTY Stocks Dataset: In this repository
 ###### Pyraformer: https://github.com/ant-research/Pyraformer
 ###### Triformer: https://github.com/razvanc92/triformer
 
-## Download the model zoo from: [https://bit.ly/LHFModelZoo](https://bit.ly/LHFModelZoo)
+## Download the model zoo from: [https://drive.google.com/drive/folders/1nqrOKRf_jJXL8cQmASnFe7nOytilYCyL?usp=sharing](https://drive.google.com/drive/folders/1nqrOKRf_jJXL8cQmASnFe7nOytilYCyL?usp=sharing)
 
 ### Use this to run the code:
 
