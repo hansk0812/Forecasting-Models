@@ -21,8 +21,6 @@
 ###### Pyraformer: https://github.com/ant-research/Pyraformer
 ###### Triformer: https://github.com/razvanc92/triformer
 
-## Download the model zoo from: [[https://bit.ly/LHFModelZoo](https://drive.google.com/drive/folders/1nqrOKRf_jJXL8cQmASnFe7nOytilYCyL?usp=sharing)]([https://bit.ly/LHFModelZoo](https://drive.google.com/drive/folders/1nqrOKRf_jJXL8cQmASnFe7nOytilYCyL?usp=sharing))
-
 ## Download the model zoo from: [https://drive.google.com/drive/folders/1nqrOKRf_jJXL8cQmASnFe7nOytilYCyL?usp=sharing](https://drive.google.com/drive/folders/1nqrOKRf_jJXL8cQmASnFe7nOytilYCyL?usp=sharing)
 
 ### Use this to run the code:
