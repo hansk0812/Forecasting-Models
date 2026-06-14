@@ -18,7 +18,7 @@ class Dataset_Weather(Dataset):
     TRAIN_VAL_TEST = (0.8, 0.1, 0.1)
 
     def __init__(self, root_path, flag='train', size=None,
-                 features='S', data_path=1,
+                 features='S', data_path='1',
                  target="T (degC)", scale="zscore", timeenc=0, freq='t', cycle=32):
         # data_path: 1 - Beutenberg (includes CO2 and Photosynthetic Radiation: 9 features)
         # data_path: 2 - Beutenberg and Saaleaue (excludes solar radiation features: 7 features) 
@@ -28,7 +28,7 @@ class Dataset_Weather(Dataset):
         # info
         if size == None:
             self.seq_len = 24 * 6 * 4
-            self.label_len = 24 * 6 * 0.25
+            self.label_len = int(24 * 6 * 0.25)
             self.pred_len = 24 * 6 * 4
         else:
             self.seq_len = size[0]
@@ -99,7 +99,7 @@ class Dataset_Weather(Dataset):
         self.scaler = StandardScaler()
 
         df_raw = self.folder_to_df(glob.glob(os.path.join(self.root_path, "mpi_roof*.csv")))
-        dataset_length = len(df_raw)
+        dataset_length = len(df_raw) - self.seq_len - self.pred_len + 1
         train_indices = (0, int(self.TRAIN_VAL_TEST[0] * dataset_length))
         if self.set_type == 0:
             indices = train_indices
@@ -170,8 +170,10 @@ class Dataset_Weather(Dataset):
                 df_stamp2 = df_stamp2.loc[df_stamp.index.repeat(nf)]
 
         df_stamp['Date Time'] = pd.to_datetime(df_stamp["Date Time"], format="%d.%m.%Y %H:%M:%S")
+        df_stamp = df_stamp.rename(columns={"Date Time": "date"})
         if self.data_path == '2':
             df_stamp2['Date Time'] = pd.to_datetime(df_stamp2["Date Time"], format="%d.%m.%Y %H:%M:%S")
+            df_stamp2 = df_stamp2.rename(columns={"Date Time": "date"})
 
         if self.timeenc == 0:
             df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
@@ -180,9 +182,9 @@ class Dataset_Weather(Dataset):
             df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
             df_stamp['minute'] = df_stamp.date.apply(lambda row: row.minute, 1)
             df_stamp['minute'] = df_stamp.minute.map(lambda x: x // 15)
-            data_stamp = df_stamp.drop(['Date Time'], 1).values
+            data_stamp = df_stamp.drop(["date"], axis=1).values
         elif self.timeenc == 1:
-            data_stamp = time_features(pd.to_datetime(df_stamp['Date Time'].values), freq=self.freq)
+            data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
             data_stamp = data_stamp.transpose(1, 0)
         
         if self.data_path == '2':
@@ -193,27 +195,27 @@ class Dataset_Weather(Dataset):
                 df_stamp2['hour'] = df_stamp2.date.apply(lambda row: row.hour, 1)
                 df_stamp2['minute'] = df_stamp2.date.apply(lambda row: row.minute, 1)
                 df_stamp2['minute'] = df_stamp2.minute.map(lambda x: x // 15)
-                data_stamp2 = df_stamp2.drop(['Date Time'], 1).values
+                data_stamp2 = df_stamp2.drop(['date'], axis=1).values
             elif self.timeenc == 1:
-                data_stamp2 = time_features(pd.to_datetime(df_stamp2['Date Time'].values), freq=self.freq)
+                data_stamp2 = time_features(pd.to_datetime(df_stamp2['date'].values), freq=self.freq)
                 data_stamp2 = data_stamp2.transpose(1, 0)
         
         if not isinstance(indices[0], tuple):
-            self.data_x = data[indices[0]*nf:indices[1]*nf]
-            self.data_y = data[indices[0]*nf:indices[1]*nf]
+            self.data_x = data[indices[0]*nf:indices[1]*nf + self.pred_len]
+            self.data_y = data[indices[0]*nf:indices[1]*nf + self.pred_len]
             self.data_stamp = data_stamp
-            self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0]*nf:indices[1]*nf]
+            self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0]*nf:indices[1]*nf + self.pred_len]
         else:
-            self.data_x = data[indices[0][0]*nf:indices[0][1]*nf]
-            self.data_y = data[indices[0][0]*nf:indices[0][1]*nf]
+            self.data_x = data[indices[0][0]*nf:indices[0][1]*nf + self.pred_len]
+            self.data_y = data[indices[0][0]*nf:indices[0][1]*nf + self.pred_len]
             self.data_stamp = data_stamp
-            self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0][0]*nf:indices[0][1]*nf]
+            self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0][0]*nf:indices[0][1]*nf + self.pred_len]
             
-            self.data_x = np.concatenate([self.data_x, data2[indices[1][0]*nf:indices[1][1]*nf]], axis=0)
-            self.data_y = np.concatenate([self.data_y, data2[indices[1][0]*nf:indices[1][1]*nf]], axis=0)
+            self.data_x = np.concatenate([self.data_x, data2[indices[1][0]*nf:indices[1][1]*nf + self.pred_len]], axis=0)
+            self.data_y = np.concatenate([self.data_y, data2[indices[1][0]*nf:indices[1][1]*nf + self.pred_len]], axis=0)
             self.data_stamp = np.concatenate([self.data_stamp, data_stamp2], axis=0)
             self.cycle_index = np.concatenate([self.cycle_index, 
-                                (np.arange(len(data2)) % self.cycle)[indices[1][0]*nf:indices[1][1]*nf]], axis=-1)
+                                (np.arange(len(data2)) % self.cycle)[indices[1][0]*nf:indices[1][1]*nf + self.pred_len]], axis=-1)
         
         print ("Dataset total number of timesteps: %d" % len(self.data_x))
         print ("Dataset length: %d" % len(self))
@@ -241,3 +243,4 @@ class Dataset_Weather(Dataset):
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
+
