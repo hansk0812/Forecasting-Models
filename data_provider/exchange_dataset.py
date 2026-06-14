@@ -10,6 +10,7 @@ import os
 
 from utils.timefeatures import time_features
 
+# Download dataset from: https://github.com/laiguokun/multivariate-time-series-data/tree/master
 class ExchangeDataset(Dataset):
 
     # ADDED METADATA ROW TO CSV FILE! CHANGE THE pd.read_csv function to include all rows!
