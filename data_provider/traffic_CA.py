@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 warnings.filterwarnings('ignore')
 
 
+# Download the ASTGNN repository from github: https://github.com/guoshnBJTU/ASTGNN for the dataset used here
 class Dataset_PEMS_Traffic(Dataset):
     
     SPLITS = [0.6, 0.2, 0.2] # train, val, test
@@ -70,10 +71,10 @@ class Dataset_PEMS_Traffic(Dataset):
         td = [start_date + timedelta(minutes=5*idx) for idx in range(df_raw.shape[0])]
         df_raw.insert(loc=0, column="date", value=pd.to_datetime(td))
 
-        train_end = int(self.SPLITS[0] * len(df_raw))
-        val_end = train_end + int(self.SPLITS[1] * len(df_raw))
+        train_end = int(self.SPLITS[0] * len(df_raw)) + self.seq_len + self.pred_len - 1
+        val_end = int((self.SPLITS[0] + self.SPLITS[1]) * len(df_raw)) + self.seq_len + self.pred_len - 1 
         test_end = len(df_raw)
-        border1s = [0, train_end, val_end]
+        border1s = [0, train_end - self.seq_len - self.pred_len + 1, val_end - self.seq_len - self.pred_len + 1]
         border2s = [train_end, val_end, test_end]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
@@ -144,24 +145,3 @@ class Dataset_PEMS_Traffic(Dataset):
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
 
-if __name__ == "__main__":
-
-    data = Dataset_PEMS_Traffic("dataset/ASTGNN/data/PEMS03/", data_path="PEMS03.npz", features='M')
-    for x, y, xm, ym, c in data:
-        print (x.shape, y.shape, xm.shape, ym.shape, c.shape)
-        break
-
-    data = Dataset_PEMS_Traffic("dataset/ASTGNN/data/PEMS04/", data_path="PEMS04.npz", features='M')
-    for x, y, xm, ym, c in data:
-        print (x.shape, y.shape, xm.shape, ym.shape, c.shape)
-        break
-
-    data = Dataset_PEMS_Traffic("dataset/ASTGNN/data/PEMS07/", data_path="PEMS07.npz", features='M')
-    for x, y, xm, ym, c in data:
-        print (x.shape, y.shape, xm.shape, ym.shape, c.shape)
-        break
-
-    data = Dataset_PEMS_Traffic("dataset/ASTGNN/data/PEMS08/", data_path="PEMS08.npz", features='M')
-    for x, y, xm, ym, c in data:
-         print (x.shape, y.shape, xm.shape, ym.shape, c.shape)
-         break

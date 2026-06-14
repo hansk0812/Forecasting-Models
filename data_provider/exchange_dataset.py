@@ -12,6 +12,7 @@ from utils.timefeatures import time_features
 
 class ExchangeDataset(Dataset):
 
+    # ADDED METADATA ROW TO CSV FILE! CHANGE THE pd.read_csv function to include all rows!
     def __init__(self, root_path, data_path, flag, size, features, cycle, target="Singapore", timeenc=0, freq='h', scale="instance"):
         
         # flag: train, val, test, pred
@@ -87,20 +88,22 @@ class ExchangeDataset(Dataset):
                     self.mean = np.array(stats["arr_0"])
                     self.std = np.array(stats["arr_1"])
 
-        train_last = int(0.6*n)
-        val_last = train_last + int(0.2*n)
+        print ("Total number of timesteps in the dataset: %d" % n)
+        
+        train_last = int(0.6*n) + lag + horizon - 1
+        val_last = int(0.8*n) + lag + horizon - 1
         if flag == "train":
-            data = data.iloc[:train_last + horizon]
-            self.cycle_index = self.cycle_index[:train_last + horizon]
-            self.data_stamp = self.data_stamp[:train_last + horizon]
+            data = data.iloc[:train_last]
+            self.cycle_index = self.cycle_index[:train_last]
+            self.data_stamp = self.data_stamp[:train_last]
         elif flag == "val":
-            data = data.iloc[train_last:val_last + horizon]
-            self.cycle_index = self.cycle_index[train_last:val_last + horizon]
-            self.data_stamp = self.data_stamp[train_last:val_last + horizon]
+            data = data.iloc[train_last - lag - horizon + 1:val_last]
+            self.cycle_index = self.cycle_index[train_last - lag - horizon + 1:val_last]
+            self.data_stamp = self.data_stamp[train_last - lag - horizon + 1:val_last]
         else:
-            data = data.iloc[int(n*0.8):]
-            self.cycle_index = self.cycle_index[val_last:]
-            self.data_stamp = self.data_stamp[val_last:]
+            data = data.iloc[val_last - lag - horizon + 1:]
+            self.cycle_index = self.cycle_index[val_last - lag - horizon + 1:]
+            self.data_stamp = self.data_stamp[val_last - lag - horizon + 1:]
         
         if scale == "zscore":
             data_scaled = (data - self.mean) / (self.std + 1e-7) #scaler.transform(data)
@@ -146,32 +149,3 @@ class ExchangeDataset(Dataset):
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
 
-       
-if __name__ == "__main__":
-    
-    dataset = ExchangeDataset("dataset/Exchange/", "exchange_rate.txt.gz", "train", [720,360,720], 'M', cycle=64, target="Australia", timeenc=0, freq='h', scale="instance")
-    print (len(dataset))
-
-    from torch.utils.data import DataLoader
-    dataset = DataLoader(dataset, batch_size=100) #, shuffle=True)
-
-    for idx, (x, y, xm, ym, c) in enumerate(dataset):
-        print (x.shape, y.shape, xm.shape, ym.shape, x.min(), x.max(), y.min(), y.max())
-
-    dataset = ExchangeDataset("dataset/Exchange/", "exchange_rate.txt.gz", "val", [720,360,720], 'M', cycle=64, target="Australia", timeenc=0, freq='h', scale="instance")
-    print (len(dataset))
-
-    from torch.utils.data import DataLoader
-    dataset = DataLoader(dataset, batch_size=100) #, shuffle=True)
-
-    for idx, (x, y, xm, ym, c) in enumerate(dataset):
-        print (x.shape, y.shape, xm.shape, ym.shape, x.min(), x.max(), y.min(), y.max())
-
-    dataset = ExchangeDataset("dataset/Exchange/", "exchange_rate.txt.gz", "test", [720,360,720], 'M', cycle=64, target="Australia", timeenc=0, freq='h', scale="instance")
-    print (len(dataset))
-
-    from torch.utils.data import DataLoader
-    dataset = DataLoader(dataset, batch_size=100) #, shuffle=True)
-
-    for idx, (x, y, xm, ym, c) in enumerate(dataset):
-        print (x.shape, y.shape, xm.shape, ym.shape, x.min(), x.max(), y.min(), y.max())

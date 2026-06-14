@@ -100,28 +100,28 @@ class Dataset_Weather(Dataset):
 
         df_raw = self.folder_to_df(glob.glob(os.path.join(self.root_path, "mpi_roof*.csv")))
         dataset_length = len(df_raw) - self.seq_len - self.pred_len + 1
-        train_indices = (0, int(self.TRAIN_VAL_TEST[0] * dataset_length))
+        train_indices = (0, int(self.TRAIN_VAL_TEST[0] * dataset_length) + self.seq_len + self.pred_len - 1)
         if self.set_type == 0:
             indices = train_indices
         elif self.set_type == 1:
             indices = (int(self.TRAIN_VAL_TEST[0] * dataset_length), \
-                       int((self.TRAIN_VAL_TEST[0] + self.TRAIN_VAL_TEST[1]) * dataset_length))
+                       int((self.TRAIN_VAL_TEST[0] + self.TRAIN_VAL_TEST[1]) * dataset_length) + self.seq_len + self.pred_len - 1)
         else:
             indices = (int((self.TRAIN_VAL_TEST[0] + self.TRAIN_VAL_TEST[1]) * dataset_length), \
-                       dataset_length)
+                       len(df_raw))
         
         if self.data_path == '2':
             df_raw2 = self.folder_to_df(glob.glob(os.path.join(self.root_path, "mpi_saale*.csv")))
-            dataset_length = len(df_raw2)
-            train_indices = [train_indices] + [(0, int(self.TRAIN_VAL_TEST[0] * dataset_length))]
+            dataset_length = len(df_raw2) - self.seq_len - self.pred_len + 1
+            train_indices = [train_indices] + [(0, int(self.TRAIN_VAL_TEST[0] * dataset_length) + self.seq_len + self.pred_len - 1)]
             if self.set_type == 0:
                 indices = train_indices
             elif self.set_type == 1:
                 indices = [indices] + [(int(self.TRAIN_VAL_TEST[0] * dataset_length), \
-                                        int((self.TRAIN_VAL_TEST[0] + self.TRAIN_VAL_TEST[1]) * dataset_length))]
+                                        int((self.TRAIN_VAL_TEST[0] + self.TRAIN_VAL_TEST[1]) * dataset_length) + self.seq_len + self.pred_len - 1)]
             else:
                 indices = [indices] + [(int((self.TRAIN_VAL_TEST[0] + self.TRAIN_VAL_TEST[1]) * dataset_length), \
-                                        dataset_length)]
+                                        len(df_raw2))]
 
         if self.features == 'M' or self.features == 'MS':
             
@@ -201,21 +201,21 @@ class Dataset_Weather(Dataset):
                 data_stamp2 = data_stamp2.transpose(1, 0)
         
         if not isinstance(indices[0], tuple):
-            self.data_x = data[indices[0]*nf:indices[1]*nf + self.pred_len]
-            self.data_y = data[indices[0]*nf:indices[1]*nf + self.pred_len]
+            self.data_x = data[indices[0]*nf:indices[1]*nf]
+            self.data_y = data[indices[0]*nf:indices[1]*nf]
             self.data_stamp = data_stamp
-            self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0]*nf:indices[1]*nf + self.pred_len]
+            self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0]*nf:indices[1]*nf]
         else:
-            self.data_x = data[indices[0][0]*nf:indices[0][1]*nf + self.pred_len]
-            self.data_y = data[indices[0][0]*nf:indices[0][1]*nf + self.pred_len]
+            self.data_x = data[indices[0][0]*nf:indices[0][1]*nf]
+            self.data_y = data[indices[0][0]*nf:indices[0][1]*nf]
             self.data_stamp = data_stamp
-            self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0][0]*nf:indices[0][1]*nf + self.pred_len]
+            self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0][0]*nf:indices[0][1]*nf]
             
-            self.data_x = np.concatenate([self.data_x, data2[indices[1][0]*nf:indices[1][1]*nf + self.pred_len]], axis=0)
-            self.data_y = np.concatenate([self.data_y, data2[indices[1][0]*nf:indices[1][1]*nf + self.pred_len]], axis=0)
+            self.data_x = np.concatenate([self.data_x, data2[indices[1][0]*nf:indices[1][1]*nf]], axis=0)
+            self.data_y = np.concatenate([self.data_y, data2[indices[1][0]*nf:indices[1][1]*nf]], axis=0)
             self.data_stamp = np.concatenate([self.data_stamp, data_stamp2], axis=0)
             self.cycle_index = np.concatenate([self.cycle_index, 
-                                (np.arange(len(data2)) % self.cycle)[indices[1][0]*nf:indices[1][1]*nf + self.pred_len]], axis=-1)
+                                (np.arange(len(data2)) % self.cycle)[indices[1][0]*nf:indices[1][1]*nf]], axis=-1)
         
         print ("Dataset total number of timesteps: %d" % len(self.data_x))
         print ("Dataset length: %d" % len(self))
@@ -239,7 +239,7 @@ class Dataset_Weather(Dataset):
         return seq_x, seq_y, seq_x_mark, seq_y_mark, cycle_index
 
     def __len__(self):
-        return len(self.data_x) - self.seq_len - self.pred_len + 1
+        return len(self.data_x) - self.pred_len - self.seq_len + 1
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
