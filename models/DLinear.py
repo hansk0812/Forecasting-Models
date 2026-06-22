@@ -89,7 +89,7 @@ class Model(nn.Module):
                         config.d_model, config.d_model, bias=True),
                                   nn.Dropout(config.dropout)])
                     season.extend([nn.Linear(
-                        self.input_size * self.c_out, config.d_model, bias=True),
+                        config.d_model, config.d_model, bias=True),
                                   nn.Dropout(config.dropout)])
 
             for idx in range(config.d_layers):
