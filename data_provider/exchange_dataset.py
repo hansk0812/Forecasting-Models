@@ -12,6 +12,8 @@ from utils.timefeatures import time_features
 
 # Download dataset from: https://github.com/laiguokun/multivariate-time-series-data/tree/master
 class ExchangeDataset(Dataset):
+    
+    TRAIN_VAL_TEST_SPLITS = [0.6, 0.2, 0.2]
 
     # ADDED METADATA ROW TO CSV FILE! CHANGE THE pd.read_csv function to include all rows!
     def __init__(self, root_path, data_path, flag, size, features, cycle, target="Singapore", timeenc=0, freq='h', scale="instance"):
@@ -78,7 +80,7 @@ class ExchangeDataset(Dataset):
 
         if not os.path.exists(save_stats_file):
             scaler = StandardScaler()
-            scaler.fit(data[:np.ceil(0.6*n).astype(np.int32)])
+            scaler.fit(data[:np.ceil(self.TRAIN_VAL_TEST_SPLITS[0] * n).astype(np.int32)])
             self.mean, self.std = scaler.mean_, scaler.var_**0.5
             with open(save_stats_file, "wb") as f:
                 np.savez(f, self.mean, self.std)
@@ -91,8 +93,8 @@ class ExchangeDataset(Dataset):
 
         print ("Total number of timesteps in the dataset: %d" % n)
         
-        train_last = int(0.6*n) + lag + horizon - 1
-        val_last = int(0.8*n) + lag + horizon - 1
+        train_last = int(self.TRAIN_VAL_TEST_SPLITS[0] * n) + lag + horizon - 1
+        val_last = int(sum(self.TRAIN_VAL_TEST_SPLITS[:2]) * n) + lag + horizon - 1
         if flag == "train":
             data = data.iloc[:train_last]
             self.cycle_index = self.cycle_index[:train_last]

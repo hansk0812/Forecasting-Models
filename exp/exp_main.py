@@ -28,6 +28,11 @@ from models import CycleNet
 from models import NLinearLHF
 from models import LHF
 
+from models import AutoformerSansRoll
+from models import NLinearSansNorm
+
+from models import PyraformerSansMask, PyraformerOppMask, PyraformerEncoderOppMask
+
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
 from utils.metrics import metric
 
@@ -137,6 +142,13 @@ class Exp_Main(Exp_Basic):
                 'CycleNet': CycleNet,
                 'SpaceTime': SpaceTime,
                 'MultiResolutionDDPM': MultiResolutionDDPM
+                'AutoformerSansRoll': AutoformerSansRoll,
+
+                'NLinearSansNorm': NLinearSansNorm,
+
+                'PyraformerSansMask': PyraformerSansMask,
+                'PyraformerOppMask': PyraformerOppMask,
+                'PyraformerEncoderOppMask': PyraformerEncoderOppMask,            
             }
             try:
                 model_dict['xLSTM_TS'] = xLSTM_TS
@@ -666,7 +678,7 @@ class Exp_Main(Exp_Basic):
         
         preds = []
         trues = []
-        if test_data.get_num_features() < 50: # RAM-specific
+        if test_data.get_num_features() < 7: # RAM-specific
             metric_avg = False
         else:
             #preds = np.zeros((self.args.pred_len, test_data.get_num_features()))

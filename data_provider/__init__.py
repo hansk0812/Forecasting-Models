@@ -8,3 +8,7 @@ from .yahoo_finance import Dataset_Yahoo_Finance
 from .agroclimatology_Delhi import Dataset_AG_Delhi
 
 from .nifty import Dataset_NIFTY
+
+from .electricity_dataset import ElectricityDataset as Dataset_Electricity
+
+from .traffic_CA import Dataset_PEMS_Traffic
