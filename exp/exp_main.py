@@ -330,7 +330,10 @@ class Exp_Main(Exp_Basic):
             else:
                 layer_names = [n[0] for n in self.model.named_parameters()]
 
-            gradnorms_dir = "gradnorms_per_batch"
+            gradnorms_dir = os.path.join(self.args.gradnorms_dir, "%s_%s_%d" % (self.args.data, self.args.model, self.args.pred_len)) 
+            if not os.path.isdir(gradnorms_dir):
+                os.makedirs(gradnorms_dir)
+
             if os.path.exists("%s/%s_%d_%s.pth" % (gradnorms_dir, self.args.model, self.args.pred_len, self.args.inspect_backward_pass)):
                 try:
                     load_dict = torch.load("%s/%s_%d_%s.pth" % (gradnorms_dir, self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
@@ -344,25 +347,77 @@ class Exp_Main(Exp_Basic):
                         grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names))) \
                                                                     for _ in range(self.args.pred_len+1)],
                                                    "backward": [torch.zeros((len(train_loader), len(layer_names))) \
-                                                                        for _ in range(self.args.pred_len+1)]}
+                                                                        for _ in range(self.args.pred_len+1)],
+                                                   "input_forward": [
+                                                                      [torch.zeros((len(train_loader), 
+                                                                                    self.args.batch_size,
+                                                                                    self.args.seq_len, 
+                                                                                    self.args.enc_in)) \
+                                                                          for _ in range(self.args.pred_len+1)] \
+                                                                      for _ in range(3)], # x_batch, x_enc_mark, x_dec_mark
+                                                   "input_backward": [
+                                                                       [torch.zeros((len(train_loader), 
+                                                                                     self.args.batch_size,
+                                                                                     self.args.seq_len, 
+                                                                                     self.args.enc_in)) \                                                                        
+                                                                          for _ in range(self.args.pred_len+1)] \
+                                                                        for _ in range(3)]} # x_batch, x_enc_mark, x_dec_mark
                     else:
                         #TODO: Data-based splits for SM models
                         grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
                                                                     for _ in range(self.args.pred_len+1)],
                                                    "backward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
-                                                                        for _ in range(self.args.pred_len+1)]}
+                                                                        for _ in range(self.args.pred_len+1)],
+                                                   "input_forward": [
+                                                                      [torch.zeros((len(train_loader), 
+                                                                                  self.args.batch_size,
+                                                                                  self.args.seq_len, 
+                                                                                  self.args.enc_in, 
+                                                                                  self.args.enc_in)) \
+                                                                        for _ in range(self.args.pred_len+1)] \
+                                                                      for _ in range(3)], # x_batch, x_enc_mark, x_dec_mark
+                                                   "input_backward": [
+                                                                       [torch.zeros((len(train_loader), 
+                                                                                     self.args.batch_size,
+                                                                                     self.args.seq_len, 
+                                                                                     self.args.enc_in, 
+                                                                                     self.args.enc_in)) \
+                                                                        for _ in range(self.args.pred_len+1)] \
+                                                                     for _ in range(3)]} # x_batch, x_enc_mark, x_dec_mark
  
             else:
                 if not self.args.backward_pass_multivariate:
                     grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names))) \
                                                                 for _ in range(self.args.pred_len+1)],
                                                "backward": [torch.zeros((len(train_loader), len(layer_names))) \
+                                                                for _ in range(self.args.pred_len+1)],
+                                               "input_forward": [torch.zeros((len(train_loader), 
+                                                                              self.args.batch_size,
+                                                                              self.args.seq_len, 
+                                                                              self.args.enc_in)) \
+                                                                for _ in range(self.args.pred_len+1)],
+                                               "input_backward": [torch.zeros((len(train_loader), 
+                                                                               self.args.batch_size,
+                                                                               self.args.seq_len, 
+                                                                               self.args.enc_in)) \
                                                                 for _ in range(self.args.pred_len+1)]}
                 else:
                     #TODO: Data-based splits for SM models
                     grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
                                                                 for _ in range(self.args.pred_len+1)],
                                                "backward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
+                                                                    for _ in range(self.args.pred_len+1)],
+                                               "input_forward": [torch.zeros((len(train_loader), 
+                                                                              self.args.batch_size,
+                                                                              self.args.seq_len, 
+                                                                              self.args.enc_in, 
+                                                                              self.args.enc_in)) \
+                                                                    for _ in range(self.args.pred_len+1)],
+                                               "input_backward": [torch.zeros((len(train_loader), 
+                                                                               self.args.batch_size,
+                                                                               self.args.seq_len,
+                                                                               self.args.enc_in, 
+                                                                               self.args.enc_in)) \
                                                                     for _ in range(self.args.pred_len+1)]}
  
         elif not self.args.calculate_acf is None:
@@ -380,6 +435,11 @@ class Exp_Main(Exp_Basic):
                
                 if i < batch_start:
                     continue
+
+                if not self.args.inspect_backward_pass is None:
+                    batch_x.requires_grad_()
+                    batch_x_mark.requires_grad_()
+                    batch_y_mark.requires_grad_()
 
                 iter_count += 1
                 model_optim.zero_grad()
@@ -507,30 +567,47 @@ class Exp_Main(Exp_Basic):
                             step = 1
 
                         if epoch > 0:
-                            if not self.args.backward_pass_multivariate:
-                                for idx in range(0, self.args.pred_len+1, step):
 
-                                    if skip_zeroes:
-                                        if (self.args.inspect_backward_pass == "forward" and idx!=batchsize_timestep):
-                                            continue
+                            gradnorms_file = os.path.join(self.args.gradnorms_dir, 
+                                                            "%s_%d_%s_gradnorms.txt" % (
+                                                                self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+
+                            if not self.args.backward_pass_multivariate:
+                                # output gradients
+                                with open(gradnorms_file, "a") as f:
+                                    for idx in range(0, self.args.pred_len+1, step):
+
+                                        if skip_zeroes:
+                                            if (self.args.inspect_backward_pass == "forward" and idx!=batchsize_timestep):
+                                                continue
+                                    
+                                        norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
+                                                                zip(layer_names, 
+                                                                    grad_norms_per_timestep[
+                                                                        self.args.inspect_backward_pass][idx].mean(axis=0))])
+                                        if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
+                                            print ("Grad norm for H: %d->%d: %s" % (idx, self.args.pred_len, norms_str), file=f)
+                                        else:
+                                            print ("Grad norm for H: %d->%d: %s" % (0, idx, norms_str), file=f)
                                 
-                                    if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
-                                        norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
-                                                                zip(layer_names, grad_norms_per_timestep["backward"][idx].mean(axis=0))])
-                                        print ("Grad norm for H: %d->%d: %s" % (idx, self.args.pred_len, norms_str))
-                                    else:
-                                        norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
-                                                                zip(layer_names, grad_norms_per_timestep["forward"][idx].mean(axis=0))])
-                                        print ("Grad norm for H: %d->%d: %s" % (0, idx, norms_str))
+                                # input gradients
+                                input_grads_file = os.path.join(self.args.gradnorms_dir,
+                                                                "%s_%d_%s_input_grads.pth" % (
+                                                                    self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+                                torch.save({"forward": grad_norms_per_timestep["input_forward"],
+                                            "backward": grad_norms_per_timestep["input_backward"]}, input_grads_file)
+
                             else:
-                                if not os.path.isdir("logs/gradnorms_M"):
-                                    os.makedirs("logs/gradnorms_M")
+                                if not os.path.isdir(os.path.join(self.args.gradnorms_dir, "gradnorms_M")):
+                                    os.makedirs(os.path.join(self.args.gradnorms_dir, "gradnorms_M"))
 
                                 # Added multivariate softmax HAM plots
                                 for v_idx in range(self.args.enc_in):
                                     
-                                    with open("logs/gradnorms_M/%s_%d_forward_gradnorms.txt", 'w') as f:
-                                        with open("logs/gradnorms_M/%s_%d_backward_gradnorms.txt", 'w') as g:
+                                    with open(os.path.join(self.args.gradnorms_dir, 
+                                                           "gradnorms_M/%s_%d_forward_gradnorms.txt" % (self.args.model, self.args.pred_len)), 'w') as f:
+                                        with open(os.path.join(self.args.gradnorms_dir, 
+                                                            "gradnorms_M/%s_%d_backward_gradnorms.txt" % (self.args.model, self.args.pred_len)), 'w') as g:
                                             
                                             for idx in range(0, self.args.pred_len+1, step):
 
@@ -547,6 +624,13 @@ class Exp_Main(Exp_Basic):
                                                                         zip(layer_names, grad_norms_per_timestep["forward"][idx].mean(axis=0)[:, v_idx])])
                                                     f.write("Grad norm for H: %d->%d: %s\n" % (0, idx, norms_str))
                                         
+                                    # input gradients
+                                    input_grads_file = os.path.join(self.args.gradnorms_dir,
+                                                                    "%s_%d_%s_V%d_input_grads.pth" % (
+                                                                        self.args.model, self.args.pred_len, self.args.inspect_backward_pass, v_idx))
+                                    torch.save({"forward": torch.stack(grad_norms_per_timestep["input_forward"])[..., v_idx],
+                                                "backward": torch.stack(grad_norms_per_timestep["input_backward"])[..., v_idx]}, input_grads_file)
+                                   
                             exit()
 
                         for h in range(0, self.args.pred_len+1, step):
@@ -572,9 +656,17 @@ class Exp_Main(Exp_Basic):
                                         #grad_norms.append(param.grad.norm())
                                         grad_norms_per_timestep[self.args.inspect_backward_pass][h][i][idx] = param.grad.norm()
                                  
+                                # input gradients
+                                grad_norms_per_timestep["input_" + self.args.inspect_backward_pass][0][h][i] = batch_x.grad
+                                grad_norms_per_timestep["input_" + self.args.inspect_backward_pass][1][h][i] = batch_x_mark.grad
+                                grad_norms_per_timestep["input_" + self.args.inspect_backward_pass][2][h][i] = batch_y_mark.grad
+
                                 for param in self.model.parameters():
                                     if not param.grad is None:
                                         param.grad.fill_(0)
+                                batch_x.grad.fill_(0)
+                                batch_x_mark.grad.fill_(0)
+                                batch_y_mark.grad.fill_(0)
                             
                             else:
 
@@ -590,9 +682,17 @@ class Exp_Main(Exp_Basic):
                                             #grad_norms.append(param.grad.norm())
                                             grad_norms_per_timestep[self.args.inspect_backward_pass][h][i][idx][v_idx] = param.grad.norm()
                                     
+                                    # input gradients
+                                    grad_norms_per_timestep["input_" + self.args.inspect_backward_pass][0][h][i][..., v_idx] = batch_x.grad
+                                    grad_norms_per_timestep["input_" + self.args.inspect_backward_pass][1][h][i][..., v_idx] = batch_x_mark.grad
+                                    grad_norms_per_timestep["input_" + self.args.inspect_backward_pass][2][h][i][..., v_idx] = batch_y_mark.grad
+
                                     for param in self.model.parameters():
                                         if not param.grad is None:
                                             param.grad.fill_(0)
+                                    batch_x.grad.fill_(0)
+                                    batch_x_mark.grad.fill_(0)
+                                    batch_y_mark.grad.fill_(0)
                                 
                                 loss = v_loss
 
@@ -607,6 +707,9 @@ class Exp_Main(Exp_Basic):
                         for param in self.model.parameters():
                             if not param.grad is None:
                                 param.grad.detach()
+                        batch_x.grad.detach()
+                        batch_x_mark.grad.detach()
+                        batch_y_mark.grad.detach()
 
             if self.args.inspect_backward_pass is None and self.args.calculate_acf is None:
                 print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
