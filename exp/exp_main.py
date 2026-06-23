@@ -141,7 +141,7 @@ class Exp_Main(Exp_Basic):
                 'SAMformer': SAMformer,
                 'CycleNet': CycleNet,
                 'SpaceTime': SpaceTime,
-                'MultiResolutionDDPM': MultiResolutionDDPM
+                'MultiResolutionDDPM': MultiResolutionDDPM,
                 'AutoformerSansRoll': AutoformerSansRoll,
 
                 'NLinearSansNorm': NLinearSansNorm,
@@ -330,9 +330,10 @@ class Exp_Main(Exp_Basic):
             else:
                 layer_names = [n[0] for n in self.model.named_parameters()]
 
-            if os.path.exists("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass)):
+            gradnorms_dir = "gradnorms_per_batch"
+            if os.path.exists("%s/%s_%d_%s.pth" % (gradnorms_dir, self.args.model, self.args.pred_len, self.args.inspect_backward_pass)):
                 try:
-                    load_dict = torch.load("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+                    load_dict = torch.load("%s/%s_%d_%s.pth" % (gradnorms_dir, self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
                     grad_norms_per_timestep = load_dict["gradnorms"]
                     batch_start = load_dict["batch"] + 1
                 
@@ -596,9 +597,9 @@ class Exp_Main(Exp_Basic):
                                 loss = v_loss
 
                         save_dict = {"batch": torch.tensor(i), "gradnorms": grad_norms_per_timestep}
-                        if not os.path.isdir("gradnorms_temp"):
-                            os.mkdir("gradnorms_temp")
-                        torch.save(save_dict, "gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+                        if not os.path.isdir(gradnorms_dir):
+                            os.mkdir(gradnorms_dir)
+                        torch.save(save_dict, "%s/%s_%d_%s.pth" % (gradnorms_dir, self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
 
                         loss.backward(retain_graph=False)
                         
