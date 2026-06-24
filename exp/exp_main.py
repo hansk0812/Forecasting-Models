@@ -175,8 +175,6 @@ class Exp_Main(Exp_Basic):
 
             model = model_dict[self.args.model].Model(self.args).float()
             
-            torch.save(model.state_dict(), "spacetime.pth")
-        
         if not self.args.load_from_chkpt is None:
             if "LHF/" in self.args.model:
                 try:
@@ -359,7 +357,7 @@ class Exp_Main(Exp_Basic):
                                                                        [torch.zeros((len(train_loader), 
                                                                                      self.args.batch_size,
                                                                                      self.args.seq_len, 
-                                                                                     self.args.enc_in)) \                                                                        
+                                                                                     self.args.enc_in)) \
                                                                           for _ in range(self.args.pred_len+1)] \
                                                                         for _ in range(3)]} # x_batch, x_enc_mark, x_dec_mark
                     else:
