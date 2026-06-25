@@ -1,6 +1,8 @@
 import os
 import glob
 
+import h5py
+
 import time
 import warnings
 import numpy as np
@@ -38,11 +40,15 @@ from utils.metrics import metric
 
 from utils.metrics import WeatherMetricsCalculator
 
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
 cmap = colormaps["Reds"]
 
-import numpy as np; np.random.seed(1)
+from matplotlib.animation import FuncAnimation
+from functools import partial
+
+np.random.seed(1)
 
 from scipy.signal import correlate
 from statsmodels.tsa.stattools import acf
@@ -114,6 +120,68 @@ class BackwardPassInspectLoss(nn.Module):
         loss = self.loss_fn(x, y)
         loss *= self.mask
         return torch.mean(loss, dim=self.mean_dims_return)
+
+import numpy as np
+
+def matplotlib_animation(input_gradnorms, batch_x, batch_y, ham_gradnorms, fname):
+    # input_gradnorms: (H+1, L, V), one over each causal and anti-causal mask from 0 to H
+
+    assert len(fname.split('.')) == 2 and fname[-3:] == "mp4"
+
+    #colours = list(matplotlib.colors.cnames.values())[:input_gradnorms.shape[-1]]
+    colours = plt.cm.get_cmap("tab20b", input_gradnorms.shape[-1])
+    for v_idx in range(input_gradnorms.shape[-1]):
+        
+        fname_format = fname.split('.')
+        v_fname = fname_format[0] + "_variate%d." % v_idx + fname_format[1]
+
+        fig, ax = plt.subplots(5, sharex=True, height_ratios=[2,1,1,2,1], figsize=(16,9))
+        plt.subplots_adjust(wspace=0.4, hspace=0.4)
+
+        x_axis = np.arange(1, input_gradnorms.shape[-2] + 1, 1)
+        extent = [x_axis[0]-(x_axis[1]-x_axis[0])/2., x_axis[-1]+(x_axis[1]-x_axis[0])/2.,0,1]
+        
+        for v_idx_plot in range(input_gradnorms.shape[-1]):
+            ax[0].plot(x_axis, batch_x[:, v_idx_plot] / batch_x[:, v_idx_plot].max(), 
+                       color=colours(v_idx_plot)) #colours[v_idx_plot]) 
+            ax[0].set_ylabel("X")
+        
+        gradient_extents = [input_gradnorms[:,:,v_idx].min(axis=(0,1)), input_gradnorms[:,:,v_idx].max(axis=(0,1))]
+        ax[2].set_ylim(gradient_extents)
+        heatmap_artist = ax[1].imshow(input_gradnorms[0, :, v_idx][np.newaxis, :], 
+                                      cmap="bwr", extent=extent, aspect="auto", 
+                                      vmin = gradient_extents[0], vmax = gradient_extents[1])
+        plot_artist, = ax[2].plot(x_axis, input_gradnorms[0, :, v_idx])
+        ax[2].set_ylabel("(dL_dX)t")
+
+        for v_idx_plot in range(input_gradnorms.shape[-1]):
+            ax[3].plot(x_axis, batch_y[:, v_idx_plot] / batch_y[:, v_idx_plot].max(), 
+                       color=colours(v_idx_plot)) #colours[v_idx_plot])
+            
+        points_artist, = ax[3].plot([], [], 'o', color=colours(v_idx)) #colours[v_idx])
+        ax[3].set_ylabel("Y")
+
+        gradnorms_x_axis = np.arange(0, ham_gradnorms.shape[0])
+        ax[4].plot(gradnorms_x_axis, ham_gradnorms)
+        ax[4].set_ylabel("(dL_dW)B")
+        points_artist2, = ax[4].plot([], [], 'o', color=colours(v_idx)) #colours[v_idx])
+
+        def animate(idx, v_idx = None):
+
+            heatmap_artist.set_data(input_gradnorms[idx, :, v_idx][np.newaxis,:])
+            plot_artist.set_xdata(x_axis)
+            plot_artist.set_ydata(input_gradnorms[idx, :, v_idx])
+            
+            points_artist.set_xdata(x_axis[idx: idx + 1])
+            points_artist.set_ydata(batch_y[idx: idx + 1, v_idx] / batch_y[:, v_idx].max())
+            
+            points_artist2.set_xdata(gradnorms_x_axis[idx: idx + 1])
+            points_artist2.set_ydata(ham_gradnorms[idx: idx + 1])
+
+            return heatmap_artist, plot_artist, points_artist
+     
+        animation = FuncAnimation(fig, partial(animate, v_idx=v_idx), frames=range(1, input_gradnorms.shape[0]), init_func=None, blit=True, interval=30)
+        animation.save(v_fname, writer="ffmpeg")
 
 class Exp_Main(Exp_Basic):
     def __init__(self, args):
@@ -332,12 +400,29 @@ class Exp_Main(Exp_Basic):
             if not os.path.isdir(gradnorms_dir):
                 os.makedirs(gradnorms_dir)
 
+            input_grads_dir = os.path.join(self.args.gradnorms_dir, "%s_%d_%s_input_gradnorms" % (
+                                                self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+            if not os.path.isdir(input_grads_dir):
+                os.makedirs(input_grads_dir)
+
+            if not self.args.backward_pass_multivariate:
+                input_gradnorms_shape = (self.args.pred_len + 1, 
+                                         self.args.batch_size, 
+                                         self.args.seq_len, 
+                                         self.args.enc_in)
+            else:
+                input_gradnorms_shape = (self.args.pred_len + 1,
+                                         self.args.enc_in,
+                                         self.args.batch_size, 
+                                         self.args.seq_len, 
+                                         self.args.enc_in)
+
             if os.path.exists("%s/%s_%d_%s.pth" % (gradnorms_dir, self.args.model, self.args.pred_len, self.args.inspect_backward_pass)):
                 try:
                     load_dict = torch.load("%s/%s_%d_%s.pth" % (gradnorms_dir, self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
                     grad_norms_per_timestep = load_dict["gradnorms"]
                     batch_start = load_dict["batch"] + 1
-                
+
                     if batch_start == len(train_loader):
                         exit()
                 except Exception:
@@ -345,79 +430,29 @@ class Exp_Main(Exp_Basic):
                         grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names))) \
                                                                     for _ in range(self.args.pred_len+1)],
                                                    "backward": [torch.zeros((len(train_loader), len(layer_names))) \
-                                                                        for _ in range(self.args.pred_len+1)],
-                                                   "input_forward": [
-                                                                      [torch.zeros((len(train_loader), 
-                                                                                    self.args.batch_size,
-                                                                                    self.args.seq_len, 
-                                                                                    self.args.enc_in)) \
-                                                                          for _ in range(self.args.pred_len+1)] \
-                                                                      for _ in range(3)], # x_batch, x_enc_mark, x_dec_mark
-                                                   "input_backward": [
-                                                                       [torch.zeros((len(train_loader), 
-                                                                                     self.args.batch_size,
-                                                                                     self.args.seq_len, 
-                                                                                     self.args.enc_in)) \
-                                                                          for _ in range(self.args.pred_len+1)] \
-                                                                        for _ in range(3)]} # x_batch, x_enc_mark, x_dec_mark
+                                                                        for _ in range(self.args.pred_len+1)]}
+
                     else:
                         #TODO: Data-based splits for SM models
                         grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
                                                                     for _ in range(self.args.pred_len+1)],
                                                    "backward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
-                                                                        for _ in range(self.args.pred_len+1)],
-                                                   "input_forward": [
-                                                                      [torch.zeros((len(train_loader), 
-                                                                                  self.args.batch_size,
-                                                                                  self.args.seq_len, 
-                                                                                  self.args.enc_in, 
-                                                                                  self.args.enc_in)) \
-                                                                        for _ in range(self.args.pred_len+1)] \
-                                                                      for _ in range(3)], # x_batch, x_enc_mark, x_dec_mark
-                                                   "input_backward": [
-                                                                       [torch.zeros((len(train_loader), 
-                                                                                     self.args.batch_size,
-                                                                                     self.args.seq_len, 
-                                                                                     self.args.enc_in, 
-                                                                                     self.args.enc_in)) \
-                                                                        for _ in range(self.args.pred_len+1)] \
-                                                                     for _ in range(3)]} # x_batch, x_enc_mark, x_dec_mark
+                                                                        for _ in range(self.args.pred_len+1)]}
  
             else:
                 if not self.args.backward_pass_multivariate:
                     grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names))) \
                                                                 for _ in range(self.args.pred_len+1)],
                                                "backward": [torch.zeros((len(train_loader), len(layer_names))) \
-                                                                for _ in range(self.args.pred_len+1)],
-                                               "input_forward": [torch.zeros((len(train_loader), 
-                                                                              self.args.batch_size,
-                                                                              self.args.seq_len, 
-                                                                              self.args.enc_in)) \
-                                                                for _ in range(self.args.pred_len+1)],
-                                               "input_backward": [torch.zeros((len(train_loader), 
-                                                                               self.args.batch_size,
-                                                                               self.args.seq_len, 
-                                                                               self.args.enc_in)) \
                                                                 for _ in range(self.args.pred_len+1)]}
+                    
                 else:
                     #TODO: Data-based splits for SM models
                     grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
                                                                 for _ in range(self.args.pred_len+1)],
                                                "backward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
-                                                                    for _ in range(self.args.pred_len+1)],
-                                               "input_forward": [torch.zeros((len(train_loader), 
-                                                                              self.args.batch_size,
-                                                                              self.args.seq_len, 
-                                                                              self.args.enc_in, 
-                                                                              self.args.enc_in)) \
-                                                                    for _ in range(self.args.pred_len+1)],
-                                               "input_backward": [torch.zeros((len(train_loader), 
-                                                                               self.args.batch_size,
-                                                                               self.args.seq_len,
-                                                                               self.args.enc_in, 
-                                                                               self.args.enc_in)) \
                                                                     for _ in range(self.args.pred_len+1)]}
- 
+                    
         elif not self.args.calculate_acf is None:
             autocorrs = []
        
@@ -434,16 +469,16 @@ class Exp_Main(Exp_Basic):
                 if i < batch_start:
                     continue
 
-                if not self.args.inspect_backward_pass is None:
-                    batch_x.requires_grad_()
-                    batch_x_mark.requires_grad_()
-                    batch_y_mark.requires_grad_()
-
                 iter_count += 1
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
                 
+                if not self.args.inspect_backward_pass is None:
+                    batch_x.requires_grad_()
+                    batch_x_mark.requires_grad_()
+                    batch_y_mark.requires_grad_()
+
                 if not self.args.model == "SpaceTime":
                     batch_x_mark = batch_x_mark.float().to(self.device)
                     batch_y_mark = batch_y_mark.float().to(self.device)
@@ -588,13 +623,6 @@ class Exp_Main(Exp_Basic):
                                         else:
                                             print ("Grad norm for H: %d->%d: %s" % (0, idx, norms_str), file=f)
                                 
-                                # input gradients
-                                input_grads_file = os.path.join(self.args.gradnorms_dir,
-                                                                "%s_%d_%s_input_grads.pth" % (
-                                                                    self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
-                                torch.save({"forward": grad_norms_per_timestep["input_forward"],
-                                            "backward": grad_norms_per_timestep["input_backward"]}, input_grads_file)
-
                             else:
                                 if not os.path.isdir(os.path.join(self.args.gradnorms_dir, "gradnorms_M")):
                                     os.makedirs(os.path.join(self.args.gradnorms_dir, "gradnorms_M"))
@@ -622,14 +650,14 @@ class Exp_Main(Exp_Basic):
                                                                         zip(layer_names, grad_norms_per_timestep["forward"][idx].mean(axis=0)[:, v_idx])])
                                                     f.write("Grad norm for H: %d->%d: %s\n" % (0, idx, norms_str))
                                         
-                                    # input gradients
-                                    input_grads_file = os.path.join(self.args.gradnorms_dir,
-                                                                    "%s_%d_%s_V%d_input_grads.pth" % (
-                                                                        self.args.model, self.args.pred_len, self.args.inspect_backward_pass, v_idx))
-                                    torch.save({"forward": torch.stack(grad_norms_per_timestep["input_forward"])[..., v_idx],
-                                                "backward": torch.stack(grad_norms_per_timestep["input_backward"])[..., v_idx]}, input_grads_file)
-                                   
                             exit()
+
+                        if self.args.model in ["Informer", "Autoformer", "FEDformer", "Pyraformer", "Triformer"]:
+                            input_grad_norms = [torch.zeros(input_gradnorms_shape),
+                                                torch.zeros(input_gradnorms_shape[:-1] + (5,)),
+                                                torch.zeros(input_gradnorms_shape[:-1] + (5,))]
+                        else:
+                            input_grad_norms = [torch.zeros(input_gradnorms_shape)]
 
                         for h in range(0, self.args.pred_len+1, step):
 
@@ -655,16 +683,18 @@ class Exp_Main(Exp_Basic):
                                         grad_norms_per_timestep[self.args.inspect_backward_pass][h][i][idx] = param.grad.norm()
                                  
                                 # input gradients
-                                grad_norms_per_timestep["input_" + self.args.inspect_backward_pass][0][h][i] = batch_x.grad
-                                grad_norms_per_timestep["input_" + self.args.inspect_backward_pass][1][h][i] = batch_x_mark.grad
-                                grad_norms_per_timestep["input_" + self.args.inspect_backward_pass][2][h][i] = batch_y_mark.grad
+                                input_grad_norms[0][h] = batch_x.grad.cpu()
+                                if len(input_grad_norms) > 1:
+                                    input_grad_norms[1][h][..., :batch_x_mark.shape[-1]] = batch_x_mark.grad.cpu()
+                                    input_grad_norms[2][h][..., :batch_y_mark.shape[-1]] = batch_y_mark.grad.cpu()
 
                                 for param in self.model.parameters():
                                     if not param.grad is None:
                                         param.grad.fill_(0)
                                 batch_x.grad.fill_(0)
-                                batch_x_mark.grad.fill_(0)
-                                batch_y_mark.grad.fill_(0)
+                                if len(input_grad_norms) > 1:
+                                    batch_x_mark.grad.fill_(0)
+                                    batch_y_mark.grad.fill_(0)
                             
                             else:
 
@@ -681,18 +711,39 @@ class Exp_Main(Exp_Basic):
                                             grad_norms_per_timestep[self.args.inspect_backward_pass][h][i][idx][v_idx] = param.grad.norm()
                                     
                                     # input gradients
-                                    grad_norms_per_timestep["input_" + self.args.inspect_backward_pass][0][h][i][..., v_idx] = batch_x.grad
-                                    grad_norms_per_timestep["input_" + self.args.inspect_backward_pass][1][h][i][..., v_idx] = batch_x_mark.grad
-                                    grad_norms_per_timestep["input_" + self.args.inspect_backward_pass][2][h][i][..., v_idx] = batch_y_mark.grad
+                                    input_grad_norms[0][h, v_idx] = batch_x.grad.cpu()
+                                    if len(input_grad_norms) > 1:
+                                        input_grad_norms[1][h, v_idx] = batch_x_mark.grad.cpu()
+                                        input_grad_norms[2][h, v_idx] = batch_y_mark.grad.cpu()
 
                                     for param in self.model.parameters():
                                         if not param.grad is None:
                                             param.grad.fill_(0)
                                     batch_x.grad.fill_(0)
-                                    batch_x_mark.grad.fill_(0)
-                                    batch_y_mark.grad.fill_(0)
+                                    if len(input_grad_norms) > 1:
+                                        batch_x_mark.grad.fill_(0)
+                                        batch_y_mark.grad.fill_(0)
                                 
                                 loss = v_loss
+                        
+                        for batch_idx in range(input_grad_norms[0].shape[-3]):
+                            data_idx = self.args.batch_size * i + batch_idx
+                            matplotlib_animation(input_grad_norms[0][:, batch_idx, :, :].numpy(), batch_x.detach().cpu().numpy()[batch_idx], 
+                                                 batch_y.detach().cpu().numpy()[batch_idx], 
+                                                 torch.stack(grad_norms_per_timestep[self.args.inspect_backward_pass]).numpy()[:, i, :].mean(axis=-1), 
+                                                 fname = os.path.join(input_grads_dir, "data_id%d.mp4" % data_idx))
+                        #torch.save(input_grad_norms[0], input_grads_file.split('.')[0] + '.pth') 
+                        #with h5py.File(input_grads_file, 'w') as f:
+                        #    f.create_dataset("x", shape=input_gradnorms_shape, 
+                        #                     data=input_grad_norms[0].numpy(), compression="lzf", 
+                        #                     chunks=(1,) + input_gradnorms_shape[-3:] if len(input_gradnorms_shape) == 4 else (1,1,) + input_gradnorms_shape[-3:])
+                        #    if len(input_grad_norms) > 1:
+                        #        f.create_dataset("x_mark", shape=input_gradnorms_shape[:-1] + (5,), 
+                        #                         data=input_grad_norms[1].numpy(), compression="lzf", 
+                        #                     chunks=(1,) + input_gradnorms_shape[-3:] if len(input_gradnorms_shape) == 4 else (1,1,) + input_gradnorms_shape[-3:])
+                        #        f.create_dataset("y_mark", shape=input_gradnorms_shape[:-1] + (5,), 
+                        #                         data=input_grad_norms[2].numpy(), compression="lzf", 
+                        #                     chunks=(1,) + input_gradnorms_shape[-3:] if len(input_gradnorms_shape) == 4 else (1,1,) + input_gradnorms_shape[-3:])
 
                         save_dict = {"batch": torch.tensor(i), "gradnorms": grad_norms_per_timestep}
                         if not os.path.isdir(gradnorms_dir):
@@ -706,8 +757,8 @@ class Exp_Main(Exp_Basic):
                             if not param.grad is None:
                                 param.grad.detach()
                         batch_x.grad.detach()
-                        batch_x_mark.grad.detach()
-                        batch_y_mark.grad.detach()
+                        #batch_x_mark.grad.detach()
+                        #batch_y_mark.grad.detach()
 
             if self.args.inspect_backward_pass is None and self.args.calculate_acf is None:
                 print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
