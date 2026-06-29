@@ -291,10 +291,24 @@ class Exp_Main(Exp_Basic):
                     model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
                     print ("\n", "."*50, "\n\nLoaded initial model from %s\n\n" % self.args.load_from_chkpt, "."*50)
                 except Exception:
-                    pass
+                    try:
+                        # 1. Load the state dict
+                        state_dict = torch.load(self.args.load_from_chkpt, weights_only=True, map_location="cpu")
 
-        if self.args.use_multi_gpu and self.args.use_gpu:
-            model = nn.DataParallel(model, device_ids=self.args.device_ids)
+                        # 2. Strip the 'module.' prefix from keys
+                        new_state_dict = OrderedDict()
+                        for k, v in state_dict.items():
+                            name = k if k.startswith("module.") else "module." + k
+                            new_state_dict[name] = v                        
+                        
+                        model.load_state_dict(new_state_dict)
+                        print ("Loaded single GPU model onto DataParallel model")
+                    except Exception:
+                        pass
+           
+        # fft doesn't work well with DataParallel, switching to DDP
+        #if self.args.use_multi_gpu and self.args.use_gpu:
+        #    model = nn.DataParallel(model, device_ids=self.args.device_ids)
         return model
 
     def _get_data(self, flag):
@@ -430,9 +444,8 @@ class Exp_Main(Exp_Basic):
             else:
                 layer_names = [n[0] for n in self.model.named_parameters()]
 
-            gradnorms_dir = os.path.join(self.args.gradnorms_dir, "%s_%s_%d" % (self.args.data, self.args.model, self.args.pred_len)) 
-            if not os.path.isdir(gradnorms_dir):
-                os.makedirs(gradnorms_dir)
+            if not os.path.isdir(self.args.gradnorms_dir):
+                os.makedirs(self.args.gradnorms_dir)
 
             input_grads_dir = os.path.join(self.args.gradnorms_dir, "%s_%d_%s_input_gradnorms" % (
                                                 self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
@@ -451,9 +464,12 @@ class Exp_Main(Exp_Basic):
                                          self.args.seq_len, 
                                          self.args.enc_in)
 
-            if os.path.exists("%s/%s_%d_%s.pth" % (gradnorms_dir, self.args.model, self.args.pred_len, self.args.inspect_backward_pass)):
+            gradnorms_file = os.path.join(self.args.gradnorms_dir, "%s_%s_%d_%s.pth" % (
+                                                      self.args.data, self.args.model, 
+                                                      self.args.pred_len, self.args.inspect_backward_pass)
+            if os.path.exists(gradnorms_file):
                 try:
-                    load_dict = torch.load("%s/%s_%d_%s.pth" % (gradnorms_dir, self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+                    load_dict = torch.load(gradnorms_file)
                     grad_norms_per_timestep = load_dict["gradnorms"]
                     batch_start = load_dict["batch"] + 1
 
@@ -635,13 +651,18 @@ class Exp_Main(Exp_Basic):
 
                         if epoch > 0:
 
-                            gradnorms_file = os.path.join(self.args.gradnorms_dir, 
-                                                            "%s_%d_%s_gradnorms.txt" % (
-                                                                self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+                            if not os.path.isdir(os.path.dirname(gradnorms_file)):
+                                os.path.makedirs(os.path.dirname(gradnorms_file))
 
+                            gradnorms_txt = os.path.join(self.args.gradnorms_dir, 
+                                                         "%s_%s_%d_%s_gradnorms.txt" % (
+                                                            self.args.model,
+                                                            self.args.data,
+                                                            self.args.pred_len,
+                                                            self.args.inspect_backward_pass))
                             if not self.args.backward_pass_multivariate:
                                 # output gradients
-                                with open(gradnorms_file, "a") as f:
+                                with open(gradnorms_txt, "a") as f:
                                     for idx in range(0, self.args.pred_len+1, step):
 
                                         if skip_zeroes:
@@ -658,16 +679,21 @@ class Exp_Main(Exp_Basic):
                                             print ("Grad norm for H: %d->%d: %s" % (0, idx, norms_str), file=f)
                                 
                             else:
-                                if not os.path.isdir(os.path.join(self.args.gradnorms_dir, "gradnorms_M")):
-                                    os.makedirs(os.path.join(self.args.gradnorms_dir, "gradnorms_M"))
+                                multivariate_gradnorms_dir = gradnorms_txt.replace("gradnorms.txt", "gradnorms_M")
+                                if not os.path.isdir(multivariate_gradnorms_dir):
+                                    os.makedirs(multivariate_gradnorms_dir)
 
                                 # Added multivariate softmax HAM plots
                                 for v_idx in range(self.args.enc_in):
                                     
-                                    with open(os.path.join(self.args.gradnorms_dir, 
-                                                           "gradnorms_M/%s_%d_forward_gradnorms.txt" % (self.args.model, self.args.pred_len)), 'w') as f:
-                                        with open(os.path.join(self.args.gradnorms_dir, 
-                                                            "gradnorms_M/%s_%d_backward_gradnorms.txt" % (self.args.model, self.args.pred_len)), 'w') as g:
+                                    with open(os.path.join(multivariate_gradnorms_dir, 
+                                                "%s_%s_%d_V%d_forward_gradnorms.txt" % (
+                                                self.args.model, self.args.data, 
+                                                self.args.pred_len, v_idx)), 'w') as f:
+                                        with open(os.path.join(multivariate_gradnorms_dir, 
+                                                  "%s_%s_%d_V%d_backward_gradnorms.txt" % (
+                                                  self.args.model, self.args.data,
+                                                  self.args.pred_len, v_idx)), 'w') as g:
                                             
                                             for idx in range(0, self.args.pred_len+1, step):
 
@@ -780,9 +806,7 @@ class Exp_Main(Exp_Basic):
                         #                     chunks=(1,) + input_gradnorms_shape[-3:] if len(input_gradnorms_shape) == 4 else (1,1,) + input_gradnorms_shape[-3:])
 
                         save_dict = {"batch": torch.tensor(i), "gradnorms": grad_norms_per_timestep}
-                        if not os.path.isdir(gradnorms_dir):
-                            os.mkdir(gradnorms_dir)
-                        torch.save(save_dict, "%s/%s_%d_%s.pth" % (gradnorms_dir, self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+                        torch.save(save_dict, gradnorms_file)
 
                         loss.backward(retain_graph=False)
                         

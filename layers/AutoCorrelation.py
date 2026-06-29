@@ -5,6 +5,8 @@ import numpy as np
 import math
 from torch.nn.functional import interpolate
 
+# DDP cannot handle weights without gradients
+from .FourierCorrelation import FourierBlock, FourierCrossAttention
 
 def decor_time(func):
     def func2(*args, **kw):
@@ -151,8 +153,14 @@ class AutoCorrelationLayer(nn.Module):
 
         self.inner_correlation = correlation
         self.query_projection = nn.Linear(d_model, d_keys * n_heads)
-        self.key_projection = nn.Linear(d_model, d_keys * n_heads)
-        self.value_projection = nn.Linear(d_model, d_values * n_heads)
+        
+        self.kq_flag = False
+        # ASSUMPTION: correlation in [FourierBlock, FourierCrossAttention]
+        if not isinstance(correlation, FourierBlock):
+            self.key_projection = nn.Linear(d_model, d_keys * n_heads)
+            # self.value_projection = nn.Linear(d_model, d_values * n_heads)
+            self.kq_flag = True
+
         self.out_projection = nn.Linear(d_values * n_heads, d_model)
         self.n_heads = n_heads
 
@@ -162,8 +170,13 @@ class AutoCorrelationLayer(nn.Module):
         H = self.n_heads
 
         queries = self.query_projection(queries).view(B, L, H, -1)
-        keys = self.key_projection(keys).view(B, S, H, -1)
-        values = self.value_projection(values).view(B, S, H, -1)
+        
+        if self.kq_flag:
+            keys = self.key_projection(keys).view(B, S, H, -1)
+            # values = self.value_projection(values).view(B, S, H, -1)
+            values = None
+        else:
+            keys, values = None, None
 
         out, attn = self.inner_correlation(
             queries,
