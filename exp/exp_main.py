@@ -1,7 +1,8 @@
 import os
 import glob
 
-import h5py
+# HDF5 too big for IG
+#import h5py
 
 import time
 import warnings
@@ -409,14 +410,6 @@ class Exp_Main(Exp_Basic):
         path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(path):
             os.makedirs(path)
-
-        if not self.args.load_from_chkpt is None:
-            try:
-                state_dict = torch.load(self.args.load_from_chkpt)
-            except Exception:
-                state_dict = torch.load(self.args.load_from_chkpt, map_location="cpu")
-
-            self.model.load_state_dict(state_dict)
 
         import time
         time_now = time.time()
