@@ -73,6 +73,40 @@ import random
 import time
 seed_everything(int(time.time()))
 
+#TODO: Add other metrics
+class RunningAvgMetrics:
+
+    sum_val1 = 0
+    sum_val2 = 0
+    count = 0
+
+    def __init__(self, shape, metric):
+        
+        if metric == "mse":
+            self.metric_fn = self.mse
+        elif metric == "mae":
+            self.metric_fn = self.mae
+        else:
+            raise NotImplementedError
+        
+        if len(shape) == 1 and shape[0] == 1:
+            return
+        
+        self.metric_sum = np.zeros(shape)
+    
+    def mse(self, y_p, y_g):
+        return ((y_p - y_g)**2).sum(axis=0)
+
+    def mae(self, y_p, y_g):
+        return np.abs(y_p - y_g).sum(axis=0)
+    
+    def add_to_mean(self, y_pred, y_gt):
+        self.count += y_gt.shape[0]
+        self.metric_sum += self.metric_fn(y_pred, y_gt)
+
+    def get_mean(self):
+        return self.metric_sum / float(self.count)
+
 class BackwardPassInspectLoss(nn.Module):
 
     def __init__(self, horizon, cutoff, cutoff_type, device, loss="mae", return_batch_dim=False, multivariate_softmax=False):
@@ -848,9 +882,22 @@ class Exp_Main(Exp_Basic):
             _, test_loader = self._get_data(flag="test")
             self.args.features = "SM"
         
+        if seq_len > 720 or pred_len > 720:
+             feature_type = setting.split("ft")[-1].split('_')[0]
+             if 'M' in feature_type:
+                shape = (self.args.pred_len, num_features)
+            else:
+                shape = (self.args.pred_len, 1)
+             print ('.'*50, "\n\n\t\tEvaluating over %d features\n\n" % num_features, '.'*50)
+            mse_running_avg = RunningAvgMetrics(shape, "mse")
+            mae_running_avg = RunningAvgMetrics(shape, "mae")
+            cpu_eff = True
+        else:
+            cpu_eff = False
+
         epoch_time = time.time()
-        
-        if self.args.inspect_backward_pass is None:
+       
+       if self.args.inspect_backward_pass is None:
             self.model.eval()
         else:
             self.model.train()
@@ -1030,8 +1077,12 @@ class Exp_Main(Exp_Basic):
                 if "Weather_Station" in self.args.data:
                     weather_metrics.update(pred, true, percentile)
                 else:
-                    preds.append(pred)
-                    trues.append(true)
+                    if not cpu_eff:
+                        preds.append(pred)
+                        trues.append(true)
+                    else:
+                        mse_running_avg.add_to_mean(pred, true)
+                        mae_running_avg.add_to_mean(pred, true)
                 
                 if i % 20 == 0 and not metric_avg:
                     
@@ -1058,34 +1109,39 @@ class Exp_Main(Exp_Basic):
                 print ("Autocorrelation for %s gt:" % self.args.model, np.array(autocorrs)[:,:,1:2,:].mean(axis=(0,1,2)))
                 exit()
  
-        if not metric_avg and not "Weather_Station" in self.args.data:
-            preds = np.concatenate(preds, axis=0)
-            trues = np.concatenate(trues, axis=0)
-            print('test shape:', preds.shape, trues.shape)
+        if not cpu_eff:
+            if not metric_avg and not "Weather_Station" in self.args.data:
+                preds = np.concatenate(preds, axis=0)
+                trues = np.concatenate(trues, axis=0)
+                print('test shape:', preds.shape, trues.shape)
+                mae, mse, rmse, mape, mspe = metric(preds, trues)
+                print('mse:{}, mae:{}'.format(mse, mae))
+                print ('result:', self.args.target, ((preds-trues)**2).mean(axis=(0,1)), np.abs(preds-trues).mean(axis=(0,1)))
+        
+            else:
+                mse = [((x-y)**2).mean(dim=-1) for x,y in zip(preds, trues)]
+                mae = [torch.abs(x-y).mean(dim=-1) for x,y in zip(preds, trues)]
+                #mse = [((x-y)**2).mean() for x,y in zip(preds, trues)]
+                #mae = [torch.abs(x-y).mean() for x,y in zip(preds, trues)]
+                mse = torch.cat(mse)
+                mae = torch.cat(mae)
+                #mse = torch.tensor(mse).mean()
+                #mae = torch.tensor(mae).mean()
+                print (mse.shape, mae.shape)
+                print('mse:{}, mae:{}'.format(mse.mean(), mae.mean()))
+                #preds = torch.cat(preds)
+                #trues = torch.cat(trues)
 
         else:
-            mse = [((x-y)**2).mean(dim=-1) for x,y in zip(preds, trues)]
-            mae = [torch.abs(x-y).mean(dim=-1) for x,y in zip(preds, trues)]
-            #mse = [((x-y)**2).mean() for x,y in zip(preds, trues)]
-            #mae = [torch.abs(x-y).mean() for x,y in zip(preds, trues)]
-            mse = torch.cat(mse)
-            mae = torch.cat(mae)
-            #mse = torch.tensor(mse).mean()
-            #mae = torch.tensor(mae).mean()
-            print (mse.shape, mae.shape)
-            print('mse:{}, mae:{}'.format(mse.mean(), mae.mean()))
-            #preds = torch.cat(preds)
-            #trues = torch.cat(trues)
+            mse = mse_running_avg.get_mean()
+            mae = mae_running_avg.get_mean()
+            
+            print ("mse:{}, mae:{}".format(mse.mean(), mae.mean()))
 
         # result save
         #folder_path = './results/' + setting + '/'
         #if not os.path.exists(folder_path):
         #    os.makedirs(folder_path)
-        
-        if not metric_avg:
-            mae, mse, rmse, mape, mspe = metric(preds, trues)
-            print('mse:{}, mae:{}'.format(mse, mae))
-            print ('result:', self.args.target, ((preds-trues)**2).mean(axis=(0,1)), np.abs(preds-trues).mean(axis=(0,1)))
         
         #f = open("result.txt", 'a')
         #f.write(setting + "  \n")
@@ -1104,7 +1160,7 @@ class Exp_Main(Exp_Basic):
             os.mkdir("error_heatmap_std")
             heatmap_idx = 0
         else:
-            heatmaps = glob.glob(os.path.join("error_heatmap_std", "*%s*" % self.args.model))
+            heatmaps = glob.glob(os.path.join("error_heatmap_std", "*%s_%d*" % (self.args.model, self.args.pred_len)))
             if len(heatmaps) == 0:
                 heatmap_idx = 0
             else:
@@ -1114,10 +1170,13 @@ class Exp_Main(Exp_Basic):
         for start in [0]:
             x = np.linspace(start, self.args.pred_len, num=self.args.pred_len-start)
             
-            if not metric_avg:
-                y = np.mean((preds-trues)**2, axis=(0,2))[start:]
+            if not cpu_eff:
+                if not metric_avg:
+                    y = np.mean((preds-trues)**2, axis=(0,2))[start:]
+                else:
+                    y = mse.mean(dim=0).cpu().numpy()[start:]
             else:
-                y = mse.mean(dim=0).cpu().numpy()
+                y = mse_running_avg.get_mean().mean(axis=-1)[start:]
 
             fig, (ax,ax2) = plt.subplots(nrows=2, sharex=True)
 
