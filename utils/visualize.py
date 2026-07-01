@@ -11,6 +11,8 @@ import os
 import glob
 import re
 
+from itertools import chain
+
 import numpy as np
 
 import random
@@ -210,8 +212,11 @@ if __name__ == "__main__":
     else:
         models_variable_name = None
 
-    H = [96, 192, 336, 720]
-    
+    files = [glob.glob(os.path.join(args.folder, "*%s*gradnorms.txt" % m.split('=')[0])) for m in args.models]
+    files = list(chain.from_iterable(files))
+    H = set([int(x.split('_')[1]) for x in files])
+    H = sorted(list(H))
+
     plots = OrderedDict()
     
     # select a few colors
@@ -488,7 +493,12 @@ if __name__ == "__main__":
                     # ALSO TRANSPOSES VALUES
                     if len(values) != h + 1:
                         if isinstance(values[0], float):
-                            x_range = np.arange(0, h+1, np.round(h, -2)/(len(values)-2)).tolist() + [h]
+                            
+                            assert "INTERPOLATION_STEP" in os.environ
+                            s = int(os.environ["INTERPOLATION_STEP"])
+                            x_range = np.arange(0, h+1, (h - h % s)/(len(values) - 2)).tolist()
+                            x_range = x_range + [float(h)] if h % s != 0 else x_range
+                            
                             # unpredictable cubic interpolation when sequence is decreasing; reverse
                             if cutoff_type != "forward":
                                 values = list(reversed(values))
@@ -506,6 +516,9 @@ if __name__ == "__main__":
                             else:
                                 values = values
 
+                            assert "INTERPOLATION_STEP" in os.environ
+                            s = int(os.environ["INTERPOLATION_STEP"])
+                            
                             values_interpolated = []
                             for jdx in range(len(values[0])):
                                 # unpredictable cubic interpolation when sequence is decreasing; reverse
@@ -513,7 +526,9 @@ if __name__ == "__main__":
                                     values_s = values[:,jdx][::-1]
                                 else:
                                     values_s = values[:,jdx]
-                                x_range = np.arange(0, h+1, np.round(h, -2)/(len(values_s)-2)).tolist() + [h]
+                                
+                                x_range = np.arange(0, h+1, (h - h % s)/(len(values_s) - 2)).tolist()
+                                x_range = x_range + [float(h)] if h % s != 0 else x_range
                                 values_spline = make_interp_spline(x_range, values_s)
                                 X = np.linspace(0, h, h+1)
                                 if cutoff_type != "forward":
