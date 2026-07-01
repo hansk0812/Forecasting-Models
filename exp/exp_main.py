@@ -798,7 +798,8 @@ class Exp_Main(Exp_Basic):
                         #                         data=input_grad_norms[2].numpy(), compression="lzf", 
                         #                     chunks=(1,) + input_gradnorms_shape[-3:] if len(input_gradnorms_shape) == 4 else (1,1,) + input_gradnorms_shape[-3:])
 
-                        save_dict = {"batch": torch.tensor(i), "gradnorms": grad_norms_per_timestep}
+                        save_dict = {"batch": torch.tensor(i), 
+                                     "gradnorms": grad_norms_per_timestep[self.args.inspect_backward_pass]}
                         torch.save(save_dict, gradnorms_file)
 
                         loss.backward(retain_graph=False)
