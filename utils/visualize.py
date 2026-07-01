@@ -107,10 +107,17 @@ def find_poly_area(coords, h):
     
     return return_area, [p[-1] for p in polys]
 
-def plot_HAM(values, model, colour_idx, plot_colors_per_model, loss_based_weights=None, h=None, cutoff_type=None):
+def plot_HAM(values, model, colour_idx, plot_colors_per_model, loss_based_weights=None, h=None, cutoff_type=None, interp_pts=[]):
+
+    global text
+
     p, = plt.plot(np.arange(0, len(values)), values, label=model, 
                     color=plot_colors_per_model[colour_idx], linewidth=1) #0.5) 
     plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors_per_model[colour_idx], linestyle='--', linewidth=0.7, alpha=0.5) #0.5) 
+
+    if len(interp_pts) > 0:
+        y_vals = [values[int(x)] for x in interp_pts[0]]
+        plt.scatter(interp_pts, y_vals, color=plot_colors_per_model[colour_idx])
     
     if not loss_based_weights is None:
         if cutoff_type == "forward":
@@ -386,6 +393,7 @@ if __name__ == "__main__":
 
         plot_diffs = OrderedDict()
         point_plts = []
+        text = ""
         for cutoff_type in types:
             
             fnames = sorted(glob.glob(os.path.join(args.folder, "*_%d_%s_%s.txt" % (
@@ -488,6 +496,7 @@ if __name__ == "__main__":
                                     keys = [x.split('=')[0] for x in gradnorm_str.split(' ')]
                                 values.append([float(x.split('=')[1].strip()) for x in gradnorm_str.split(' ')])
                     
+                    plot_interp_pts = [] # Plot interpolation points on the HAM plot for clarity
                     # values: (h,l) horizon x num_layers
                     # ASSUMPTION: Interpolation independently is the same as interpolation of the mean
                     # ALSO TRANSPOSES VALUES
@@ -499,6 +508,11 @@ if __name__ == "__main__":
                             x_range = np.arange(0, h+1, (h - h % s)/(len(values) - 2)).tolist()
                             x_range = x_range + [float(h)] if h % s != 0 else x_range
                             
+                            if len(plot_interp_pts) == 0:
+                                plot_interp_pts.append(x_range)
+                            else:
+                                plot_interp_pts[0] = x_range
+
                             # unpredictable cubic interpolation when sequence is decreasing; reverse
                             if cutoff_type != "forward":
                                 values = list(reversed(values))
@@ -529,6 +543,15 @@ if __name__ == "__main__":
                                 
                                 x_range = np.arange(0, h+1, (h - h % s)/(len(values_s) - 2)).tolist()
                                 x_range = x_range + [float(h)] if h % s != 0 else x_range
+                                
+                                if len(plot_interp_pts) == 0:
+                                    plot_interp_pts.append([x_range])
+                                else:
+                                    if jdx == 0:
+                                        plot_interp_pts[0] = [x_range]
+                                    else:
+                                        plot_interp_pts[0].append(x_range)
+
                                 values_spline = make_interp_spline(x_range, values_s)
                                 X = np.linspace(0, h, h+1)
                                 if cutoff_type != "forward":
@@ -580,7 +603,7 @@ if __name__ == "__main__":
                                 else:
                                     model_legend = model
 
-                                p = plot_HAM(all_values, model_legend, idx, plot_colors_per_model)
+                                p = plot_HAM(all_values, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts)
                                 legend_list[model_legend] = [p]
                             
                                 model_index = models_variable_name[model]["values"].index(model)
@@ -616,7 +639,7 @@ if __name__ == "__main__":
                                 else:
                                     model_legend = args.name[models_variable_name[model]["model_idx"]+jdx]
 
-                                p = plot_HAM(value, model_legend, idx, plot_colors_per_model)
+                                p = plot_HAM(value, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts[0][jdx])
                                 if model_legend in legend_list:
                                     legend_list[model_legend].append(p)
                                 else:
@@ -639,9 +662,10 @@ if __name__ == "__main__":
                                 model_legend = model
 
                             if model != "SpaceTime":
-                                p = plot_HAM(values, model_legend, idx, plot_colors_per_model)
+                                p = plot_HAM(values, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts)
                             else:
-                                p = plot_HAM(values, model_legend, idx, plot_colors_per_model, loss_based_weights, h, cutoff_type)
+                                p = plot_HAM(values, model_legend, idx, plot_colors_per_model, loss_based_weights, h, cutoff_type, 
+                                             interp_pts=plot_interp_pts)
 
                     else:
                             if cutoff_type == "forward":
@@ -659,9 +683,10 @@ if __name__ == "__main__":
 
                             #values = np.array(values).mean(axis=0)
                             if model != "SpaceTime":
-                                p = plot_HAM(values, model_legend, idx, plot_colors_per_model)
+                                p = plot_HAM(values, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts)
                             else:
-                                p = plot_HAM(values, model_legend, idx, plot_colors_per_model, loss_based_weights, h, cutoff_type)
+                                p = plot_HAM(values, model_legend, idx, plot_colors_per_model, loss_based_weights, h, cutoff_type, 
+                                             interp_pts=plot_interp_pts)
                     
                     if len(values.shape) > 1:
                         model_names_multiple = args.models[models_variable_name[model]["model_idx"]: models_variable_name[model]["model_idx"]+len(values)]
