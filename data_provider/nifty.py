@@ -50,6 +50,8 @@ class Dataset_NIFTY(Dataset):
         self.data_path = data_path
         self.__read_data__()
 
+        print (flag, len(self))
+
     def __read_data__(self):
         self.scaler = StandardScaler()
 
@@ -96,11 +98,12 @@ class Dataset_NIFTY(Dataset):
             os.rename(fname, fname.replace(self.data_path, self.data_path[:-4] + "_original_with_nans" + self.data_path[-4:]))
             df_raw.to_csv(fname, index=False)
 
-        train_end = int(self.SPLITS[0] * len(df_raw))
-        val_end = train_end + int(self.SPLITS[1] * len(df_raw))
-        test_end = len(df_raw)
+        dataset_l = len(df_raw) - self.seq_len - self.pred_len + 1
+        train_end = int(self.SPLITS[0] * dataset_l)
+        val_end = train_end + int(self.SPLITS[1] * dataset_l)
+        test_end = dataset_l
         border1s = [0, train_end, val_end]
-        border2s = [train_end, val_end, test_end]
+        border2s = [train_end + self.pred_len + self.seq_len - 1, val_end + self.pred_len + self.seq_len - 1, test_end + self.pred_len + self.seq_len - 1]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
@@ -166,14 +169,8 @@ class Dataset_NIFTY(Dataset):
         return seq_x, seq_y, seq_x_mark, seq_y_mark, cycle
 
     def __len__(self):
-        return len(self.data_x) - self.seq_len - self.pred_len + 1
+        return len(self.data_x) - self.pred_len - self.seq_len + 1
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
 
-if __name__ == "__main__":
-
-    data = Dataset_NIFTY("dataset/NIFTYStocks/", data_path="nifty_v2.csv", features='M')
-    for x, y, xm, ym, c in data:
-        print (x.shape, y.shape, xm.shape, ym.shape, c.shape)
-        break

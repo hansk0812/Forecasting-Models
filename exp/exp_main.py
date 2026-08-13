@@ -1,6 +1,9 @@
 import os
 import glob
 
+# HDF5 too big for IG
+#import h5py
+
 import time
 import warnings
 import numpy as np
@@ -28,16 +31,25 @@ from models import CycleNet
 from models import NLinearLHF
 from models import LHF
 
+from models import AutoformerSansRoll
+from models import NLinearSansNorm
+
+from models import PyraformerSansMask, PyraformerOppMask, PyraformerEncoderOppMask
+
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
 from utils.metrics import metric
 
 from utils.metrics import WeatherMetricsCalculator
 
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
 cmap = colormaps["Reds"]
 
-import numpy as np; np.random.seed(1)
+from matplotlib.animation import FuncAnimation
+from functools import partial
+
+np.random.seed(1)
 
 from scipy.signal import correlate
 from statsmodels.tsa.stattools import acf
@@ -61,6 +73,40 @@ def seed_everything(seed=42):
 import random
 import time
 seed_everything(int(time.time()))
+
+#TODO: Add other metrics
+class RunningAvgMetrics:
+
+    sum_val1 = 0
+    sum_val2 = 0
+    count = 0
+
+    def __init__(self, shape, metric):
+        
+        if metric == "mse":
+            self.metric_fn = self.mse
+        elif metric == "mae":
+            self.metric_fn = self.mae
+        else:
+            raise NotImplementedError
+        
+        if len(shape) == 1 and shape[0] == 1:
+            return
+        
+        self.metric_sum = np.zeros(shape)
+    
+    def mse(self, y_p, y_g):
+        return ((y_p - y_g)**2).sum(axis=0)
+
+    def mae(self, y_p, y_g):
+        return np.abs(y_p - y_g).sum(axis=0)
+    
+    def add_to_mean(self, y_pred, y_gt):
+        self.count += y_gt.shape[0]
+        self.metric_sum += self.metric_fn(y_pred, y_gt)
+
+    def get_mean(self):
+        return self.metric_sum / float(self.count)
 
 class BackwardPassInspectLoss(nn.Module):
 
@@ -110,6 +156,68 @@ class BackwardPassInspectLoss(nn.Module):
         loss *= self.mask
         return torch.mean(loss, dim=self.mean_dims_return)
 
+import numpy as np
+
+def matplotlib_animation(input_gradnorms, batch_x, batch_y, ham_gradnorms, fname):
+    # input_gradnorms: (H+1, L, V), one over each causal and anti-causal mask from 0 to H
+
+    assert len(fname.split('.')) == 2 and fname[-3:] == "mp4"
+
+    #colours = list(matplotlib.colors.cnames.values())[:input_gradnorms.shape[-1]]
+    colours = plt.cm.get_cmap("tab20b", input_gradnorms.shape[-1])
+    for v_idx in range(input_gradnorms.shape[-1]):
+        
+        fname_format = fname.split('.')
+        v_fname = fname_format[0] + "_variate%d." % v_idx + fname_format[1]
+
+        fig, ax = plt.subplots(5, sharex=True, height_ratios=[2,1,1,2,1], figsize=(16,9))
+        plt.subplots_adjust(wspace=0.4, hspace=0.4)
+
+        x_axis = np.arange(1, input_gradnorms.shape[-2] + 1, 1)
+        extent = [x_axis[0]-(x_axis[1]-x_axis[0])/2., x_axis[-1]+(x_axis[1]-x_axis[0])/2.,0,1]
+        
+        for v_idx_plot in range(input_gradnorms.shape[-1]):
+            ax[0].plot(x_axis, batch_x[:, v_idx_plot] / batch_x[:, v_idx_plot].max(), 
+                       color=colours(v_idx_plot)) #colours[v_idx_plot]) 
+            ax[0].set_ylabel("X")
+        
+        gradient_extents = [input_gradnorms[:,:,v_idx].min(axis=(0,1)), input_gradnorms[:,:,v_idx].max(axis=(0,1))]
+        ax[2].set_ylim(gradient_extents)
+        heatmap_artist = ax[1].imshow(input_gradnorms[0, :, v_idx][np.newaxis, :], 
+                                      cmap="bwr", extent=extent, aspect="auto", 
+                                      vmin = gradient_extents[0], vmax = gradient_extents[1])
+        plot_artist, = ax[2].plot(x_axis, input_gradnorms[0, :, v_idx])
+        ax[2].set_ylabel("(dL_dX)t")
+
+        for v_idx_plot in range(input_gradnorms.shape[-1]):
+            ax[3].plot(x_axis, batch_y[:, v_idx_plot] / batch_y[:, v_idx_plot].max(), 
+                       color=colours(v_idx_plot)) #colours[v_idx_plot])
+            
+        points_artist, = ax[3].plot([], [], 'o', color=colours(v_idx)) #colours[v_idx])
+        ax[3].set_ylabel("Y")
+
+        gradnorms_x_axis = np.arange(0, ham_gradnorms.shape[0])
+        ax[4].plot(gradnorms_x_axis, ham_gradnorms)
+        ax[4].set_ylabel("(dL_dW)B")
+        points_artist2, = ax[4].plot([], [], 'o', color=colours(v_idx)) #colours[v_idx])
+
+        def animate(idx, v_idx = None):
+
+            heatmap_artist.set_data(input_gradnorms[idx, :, v_idx][np.newaxis,:])
+            plot_artist.set_xdata(x_axis)
+            plot_artist.set_ydata(input_gradnorms[idx, :, v_idx])
+            
+            points_artist.set_xdata(x_axis[idx: idx + 1])
+            points_artist.set_ydata(batch_y[idx: idx + 1, v_idx] / batch_y[:, v_idx].max())
+            
+            points_artist2.set_xdata(gradnorms_x_axis[idx: idx + 1])
+            points_artist2.set_ydata(ham_gradnorms[idx: idx + 1])
+
+            return heatmap_artist, plot_artist, points_artist
+     
+        animation = FuncAnimation(fig, partial(animate, v_idx=v_idx), frames=range(1, input_gradnorms.shape[0]), init_func=None, blit=True, interval=30)
+        animation.save(v_fname, writer="ffmpeg")
+
 class Exp_Main(Exp_Basic):
     def __init__(self, args):
         super(Exp_Main, self).__init__(args)
@@ -136,7 +244,14 @@ class Exp_Main(Exp_Basic):
                 'SAMformer': SAMformer,
                 'CycleNet': CycleNet,
                 'SpaceTime': SpaceTime,
-                'MultiResolutionDDPM': MultiResolutionDDPM
+                'MultiResolutionDDPM': MultiResolutionDDPM,
+                'AutoformerSansRoll': AutoformerSansRoll,
+
+                'NLinearSansNorm': NLinearSansNorm,
+
+                'PyraformerSansMask': PyraformerSansMask,
+                'PyraformerOppMask': PyraformerOppMask,
+                'PyraformerEncoderOppMask': PyraformerEncoderOppMask,            
             }
             try:
                 model_dict['xLSTM_TS'] = xLSTM_TS
@@ -163,8 +278,6 @@ class Exp_Main(Exp_Basic):
 
             model = model_dict[self.args.model].Model(self.args).float()
             
-            torch.save(model.state_dict(), "spacetime.pth")
-        
         if not self.args.load_from_chkpt is None:
             if "LHF/" in self.args.model:
                 try:
@@ -179,10 +292,24 @@ class Exp_Main(Exp_Basic):
                     model.load_state_dict(torch.load(self.args.load_from_chkpt, weights_only=True))
                     print ("\n", "."*50, "\n\nLoaded initial model from %s\n\n" % self.args.load_from_chkpt, "."*50)
                 except Exception:
-                    pass
+                    try:
+                        # 1. Load the state dict
+                        state_dict = torch.load(self.args.load_from_chkpt, weights_only=True, map_location="cpu")
 
-        if self.args.use_multi_gpu and self.args.use_gpu:
-            model = nn.DataParallel(model, device_ids=self.args.device_ids)
+                        # 2. Strip the 'module.' prefix from keys
+                        new_state_dict = OrderedDict()
+                        for k, v in state_dict.items():
+                            name = k if k.startswith("module.") else "module." + k
+                            new_state_dict[name] = v                        
+                        
+                        model.load_state_dict(new_state_dict)
+                        print ("Loaded single GPU model onto DataParallel model")
+                    except Exception:
+                        pass
+           
+        # fft doesn't work well with DataParallel, switching to DDP
+        #if self.args.use_multi_gpu and self.args.use_gpu:
+        #    model = nn.DataParallel(model, device_ids=self.args.device_ids)
         return model
 
     def _get_data(self, flag):
@@ -284,14 +411,6 @@ class Exp_Main(Exp_Basic):
         if not os.path.exists(path):
             os.makedirs(path)
 
-        if not self.args.load_from_chkpt is None:
-            try:
-                state_dict = torch.load(self.args.load_from_chkpt)
-            except Exception:
-                state_dict = torch.load(self.args.load_from_chkpt, map_location="cpu")
-
-            self.model.load_state_dict(state_dict)
-
         import time
         time_now = time.time()
 
@@ -318,12 +437,35 @@ class Exp_Main(Exp_Basic):
             else:
                 layer_names = [n[0] for n in self.model.named_parameters()]
 
-            if os.path.exists("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass)):
+            if not os.path.isdir(self.args.gradnorms_dir):
+                os.makedirs(self.args.gradnorms_dir)
+
+            input_grads_dir = os.path.join(self.args.gradnorms_dir, "%s_%d_%s_input_gradnorms" % (
+                                                self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+            if not os.path.isdir(input_grads_dir):
+                os.makedirs(input_grads_dir)
+
+            if not self.args.backward_pass_multivariate:
+                input_gradnorms_shape = (self.args.pred_len + 1, 
+                                         self.args.batch_size, 
+                                         self.args.seq_len, 
+                                         self.args.enc_in)
+            else:
+                input_gradnorms_shape = (self.args.pred_len + 1,
+                                         self.args.enc_in,
+                                         self.args.batch_size, 
+                                         self.args.seq_len, 
+                                         self.args.enc_in)
+
+            gradnorms_file = os.path.join(self.args.gradnorms_dir, "%s_%s_%d_%s.pth" % (
+                                                      self.args.data, self.args.model, 
+                                                      self.args.pred_len, self.args.inspect_backward_pass)
+            if os.path.exists(gradnorms_file):
                 try:
-                    load_dict = torch.load("gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+                    load_dict = torch.load(gradnorms_file)
                     grad_norms_per_timestep = load_dict["gradnorms"]
                     batch_start = load_dict["batch"] + 1
-                
+
                     if batch_start == len(train_loader):
                         exit()
                 except Exception:
@@ -332,6 +474,7 @@ class Exp_Main(Exp_Basic):
                                                                     for _ in range(self.args.pred_len+1)],
                                                    "backward": [torch.zeros((len(train_loader), len(layer_names))) \
                                                                         for _ in range(self.args.pred_len+1)]}
+
                     else:
                         #TODO: Data-based splits for SM models
                         grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
@@ -345,13 +488,14 @@ class Exp_Main(Exp_Basic):
                                                                 for _ in range(self.args.pred_len+1)],
                                                "backward": [torch.zeros((len(train_loader), len(layer_names))) \
                                                                 for _ in range(self.args.pred_len+1)]}
+                    
                 else:
                     #TODO: Data-based splits for SM models
                     grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
                                                                 for _ in range(self.args.pred_len+1)],
                                                "backward": [torch.zeros((len(train_loader), len(layer_names), self.args.enc_in)) \
                                                                     for _ in range(self.args.pred_len+1)]}
- 
+                    
         elif not self.args.calculate_acf is None:
             autocorrs = []
        
@@ -373,6 +517,11 @@ class Exp_Main(Exp_Basic):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
                 
+                if not self.args.inspect_backward_pass is None:
+                    batch_x.requires_grad_()
+                    batch_x_mark.requires_grad_()
+                    batch_y_mark.requires_grad_()
+
                 if not self.args.model == "SpaceTime":
                     batch_x_mark = batch_x_mark.float().to(self.device)
                     batch_y_mark = batch_y_mark.float().to(self.device)
@@ -494,30 +643,50 @@ class Exp_Main(Exp_Basic):
                             step = 1
 
                         if epoch > 0:
-                            if not self.args.backward_pass_multivariate:
-                                for idx in range(0, self.args.pred_len+1, step):
 
-                                    if skip_zeroes:
-                                        if (self.args.inspect_backward_pass == "forward" and idx!=batchsize_timestep):
-                                            continue
+                            if not os.path.isdir(os.path.dirname(gradnorms_file)):
+                                os.path.makedirs(os.path.dirname(gradnorms_file))
+
+                            gradnorms_txt = os.path.join(self.args.gradnorms_dir, 
+                                                         "%s_%s_%d_%s_gradnorms.txt" % (
+                                                            self.args.model,
+                                                            self.args.data,
+                                                            self.args.pred_len,
+                                                            self.args.inspect_backward_pass))
+                            if not self.args.backward_pass_multivariate:
+                                # output gradients
+                                with open(gradnorms_txt, "a") as f:
+                                    for idx in range(0, self.args.pred_len+1, step):
+
+                                        if skip_zeroes:
+                                            if (self.args.inspect_backward_pass == "forward" and idx!=batchsize_timestep):
+                                                continue
+                                    
+                                        norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
+                                                                zip(layer_names, 
+                                                                    grad_norms_per_timestep[
+                                                                        self.args.inspect_backward_pass][idx].mean(axis=0))])
+                                        if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
+                                            print ("Grad norm for H: %d->%d: %s" % (idx, self.args.pred_len, norms_str), file=f)
+                                        else:
+                                            print ("Grad norm for H: %d->%d: %s" % (0, idx, norms_str), file=f)
                                 
-                                    if self.args.inspect_backward_pass == "backward": # 0:idx entries are 0
-                                        norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
-                                                                zip(layer_names, grad_norms_per_timestep["backward"][idx].mean(axis=0))])
-                                        print ("Grad norm for H: %d->%d: %s" % (idx, self.args.pred_len, norms_str))
-                                    else:
-                                        norms_str = ' '.join(["%s=%.16E" % (n, Decimal(g.item())) for n, g in \
-                                                                zip(layer_names, grad_norms_per_timestep["forward"][idx].mean(axis=0))])
-                                        print ("Grad norm for H: %d->%d: %s" % (0, idx, norms_str))
                             else:
-                                if not os.path.isdir("logs/gradnorms_M"):
-                                    os.makedirs("logs/gradnorms_M")
+                                multivariate_gradnorms_dir = gradnorms_txt.replace("gradnorms.txt", "gradnorms_M")
+                                if not os.path.isdir(multivariate_gradnorms_dir):
+                                    os.makedirs(multivariate_gradnorms_dir)
 
                                 # Added multivariate softmax HAM plots
                                 for v_idx in range(self.args.enc_in):
                                     
-                                    with open("logs/gradnorms_M/%s_%d_forward_gradnorms.txt", 'w') as f:
-                                        with open("logs/gradnorms_M/%s_%d_backward_gradnorms.txt", 'w') as g:
+                                    with open(os.path.join(multivariate_gradnorms_dir, 
+                                                "%s_%s_%d_V%d_forward_gradnorms.txt" % (
+                                                self.args.model, self.args.data, 
+                                                self.args.pred_len, v_idx)), 'w') as f:
+                                        with open(os.path.join(multivariate_gradnorms_dir, 
+                                                  "%s_%s_%d_V%d_backward_gradnorms.txt" % (
+                                                  self.args.model, self.args.data,
+                                                  self.args.pred_len, v_idx)), 'w') as g:
                                             
                                             for idx in range(0, self.args.pred_len+1, step):
 
@@ -535,6 +704,13 @@ class Exp_Main(Exp_Basic):
                                                     f.write("Grad norm for H: %d->%d: %s\n" % (0, idx, norms_str))
                                         
                             exit()
+
+                        if self.args.model in ["Informer", "Autoformer", "FEDformer", "Pyraformer", "Triformer"]:
+                            input_grad_norms = [torch.zeros(input_gradnorms_shape),
+                                                torch.zeros(input_gradnorms_shape[:-1] + (5,)),
+                                                torch.zeros(input_gradnorms_shape[:-1] + (5,))]
+                        else:
+                            input_grad_norms = [torch.zeros(input_gradnorms_shape)]
 
                         for h in range(0, self.args.pred_len+1, step):
 
@@ -559,9 +735,19 @@ class Exp_Main(Exp_Basic):
                                         #grad_norms.append(param.grad.norm())
                                         grad_norms_per_timestep[self.args.inspect_backward_pass][h][i][idx] = param.grad.norm()
                                  
+                                # input gradients
+                                input_grad_norms[0][h] = batch_x.grad.cpu()
+                                if len(input_grad_norms) > 1:
+                                    input_grad_norms[1][h][..., :batch_x_mark.shape[-1]] = batch_x_mark.grad.cpu()
+                                    input_grad_norms[2][h][..., :batch_y_mark.shape[-1]] = batch_y_mark.grad.cpu()
+
                                 for param in self.model.parameters():
                                     if not param.grad is None:
                                         param.grad.fill_(0)
+                                batch_x.grad.fill_(0)
+                                if len(input_grad_norms) > 1:
+                                    batch_x_mark.grad.fill_(0)
+                                    batch_y_mark.grad.fill_(0)
                             
                             else:
 
@@ -577,16 +763,44 @@ class Exp_Main(Exp_Basic):
                                             #grad_norms.append(param.grad.norm())
                                             grad_norms_per_timestep[self.args.inspect_backward_pass][h][i][idx][v_idx] = param.grad.norm()
                                     
+                                    # input gradients
+                                    input_grad_norms[0][h, v_idx] = batch_x.grad.cpu()
+                                    if len(input_grad_norms) > 1:
+                                        input_grad_norms[1][h, v_idx] = batch_x_mark.grad.cpu()
+                                        input_grad_norms[2][h, v_idx] = batch_y_mark.grad.cpu()
+
                                     for param in self.model.parameters():
                                         if not param.grad is None:
                                             param.grad.fill_(0)
+                                    batch_x.grad.fill_(0)
+                                    if len(input_grad_norms) > 1:
+                                        batch_x_mark.grad.fill_(0)
+                                        batch_y_mark.grad.fill_(0)
                                 
                                 loss = v_loss
+                        
+                        for batch_idx in range(input_grad_norms[0].shape[-3]):
+                            data_idx = self.args.batch_size * i + batch_idx
+                            matplotlib_animation(input_grad_norms[0][:, batch_idx, :, :].numpy(), batch_x.detach().cpu().numpy()[batch_idx], 
+                                                 batch_y.detach().cpu().numpy()[batch_idx], 
+                                                 torch.stack(grad_norms_per_timestep[self.args.inspect_backward_pass]).numpy()[:, i, :].mean(axis=-1), 
+                                                 fname = os.path.join(input_grads_dir, "data_id%d.mp4" % data_idx))
+                        #torch.save(input_grad_norms[0], input_grads_file.split('.')[0] + '.pth') 
+                        #with h5py.File(input_grads_file, 'w') as f:
+                        #    f.create_dataset("x", shape=input_gradnorms_shape, 
+                        #                     data=input_grad_norms[0].numpy(), compression="lzf", 
+                        #                     chunks=(1,) + input_gradnorms_shape[-3:] if len(input_gradnorms_shape) == 4 else (1,1,) + input_gradnorms_shape[-3:])
+                        #    if len(input_grad_norms) > 1:
+                        #        f.create_dataset("x_mark", shape=input_gradnorms_shape[:-1] + (5,), 
+                        #                         data=input_grad_norms[1].numpy(), compression="lzf", 
+                        #                     chunks=(1,) + input_gradnorms_shape[-3:] if len(input_gradnorms_shape) == 4 else (1,1,) + input_gradnorms_shape[-3:])
+                        #        f.create_dataset("y_mark", shape=input_gradnorms_shape[:-1] + (5,), 
+                        #                         data=input_grad_norms[2].numpy(), compression="lzf", 
+                        #                     chunks=(1,) + input_gradnorms_shape[-3:] if len(input_gradnorms_shape) == 4 else (1,1,) + input_gradnorms_shape[-3:])
 
-                        save_dict = {"batch": torch.tensor(i), "gradnorms": grad_norms_per_timestep}
-                        if not os.path.isdir("gradnorms_temp"):
-                            os.mkdir("gradnorms_temp")
-                        torch.save(save_dict, "gradnorms_temp/%s_%d_%s.pth" % (self.args.model, self.args.pred_len, self.args.inspect_backward_pass))
+                        save_dict = {"batch": torch.tensor(i), 
+                                     "gradnorms": grad_norms_per_timestep[self.args.inspect_backward_pass]}
+                        torch.save(save_dict, gradnorms_file)
 
                         loss.backward(retain_graph=False)
                         
@@ -594,6 +808,9 @@ class Exp_Main(Exp_Basic):
                         for param in self.model.parameters():
                             if not param.grad is None:
                                 param.grad.detach()
+                        batch_x.grad.detach()
+                        #batch_x_mark.grad.detach()
+                        #batch_y_mark.grad.detach()
 
             if self.args.inspect_backward_pass is None and self.args.calculate_acf is None:
                 print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
@@ -666,7 +883,7 @@ class Exp_Main(Exp_Basic):
         
         preds = []
         trues = []
-        if test_data.get_num_features() < 50: # RAM-specific
+        if test_data.get_num_features() < 7: # RAM-specific
             metric_avg = False
         else:
             #preds = np.zeros((self.args.pred_len, test_data.get_num_features()))
@@ -683,9 +900,22 @@ class Exp_Main(Exp_Basic):
             _, test_loader = self._get_data(flag="test")
             self.args.features = "SM"
         
+        if seq_len > 720 or pred_len > 720:
+             feature_type = setting.split("ft")[-1].split('_')[0]
+             if 'M' in feature_type:
+                shape = (self.args.pred_len, num_features)
+            else:
+                shape = (self.args.pred_len, 1)
+             print ('.'*50, "\n\n\t\tEvaluating over %d features\n\n" % num_features, '.'*50)
+            mse_running_avg = RunningAvgMetrics(shape, "mse")
+            mae_running_avg = RunningAvgMetrics(shape, "mae")
+            cpu_eff = True
+        else:
+            cpu_eff = False
+
         epoch_time = time.time()
-        
-        if self.args.inspect_backward_pass is None:
+       
+       if self.args.inspect_backward_pass is None:
             self.model.eval()
         else:
             self.model.train()
@@ -865,8 +1095,12 @@ class Exp_Main(Exp_Basic):
                 if "Weather_Station" in self.args.data:
                     weather_metrics.update(pred, true, percentile)
                 else:
-                    preds.append(pred)
-                    trues.append(true)
+                    if not cpu_eff:
+                        preds.append(pred)
+                        trues.append(true)
+                    else:
+                        mse_running_avg.add_to_mean(pred, true)
+                        mae_running_avg.add_to_mean(pred, true)
                 
                 if i % 20 == 0 and not metric_avg:
                     
@@ -893,34 +1127,39 @@ class Exp_Main(Exp_Basic):
                 print ("Autocorrelation for %s gt:" % self.args.model, np.array(autocorrs)[:,:,1:2,:].mean(axis=(0,1,2)))
                 exit()
  
-        if not metric_avg and not "Weather_Station" in self.args.data:
-            preds = np.concatenate(preds, axis=0)
-            trues = np.concatenate(trues, axis=0)
-            print('test shape:', preds.shape, trues.shape)
+        if not cpu_eff:
+            if not metric_avg and not "Weather_Station" in self.args.data:
+                preds = np.concatenate(preds, axis=0)
+                trues = np.concatenate(trues, axis=0)
+                print('test shape:', preds.shape, trues.shape)
+                mae, mse, rmse, mape, mspe = metric(preds, trues)
+                print('mse:{}, mae:{}'.format(mse, mae))
+                print ('result:', self.args.target, ((preds-trues)**2).mean(axis=(0,1)), np.abs(preds-trues).mean(axis=(0,1)))
+        
+            else:
+                mse = [((x-y)**2).mean(dim=-1) for x,y in zip(preds, trues)]
+                mae = [torch.abs(x-y).mean(dim=-1) for x,y in zip(preds, trues)]
+                #mse = [((x-y)**2).mean() for x,y in zip(preds, trues)]
+                #mae = [torch.abs(x-y).mean() for x,y in zip(preds, trues)]
+                mse = torch.cat(mse)
+                mae = torch.cat(mae)
+                #mse = torch.tensor(mse).mean()
+                #mae = torch.tensor(mae).mean()
+                print (mse.shape, mae.shape)
+                print('mse:{}, mae:{}'.format(mse.mean(), mae.mean()))
+                #preds = torch.cat(preds)
+                #trues = torch.cat(trues)
 
         else:
-            mse = [((x-y)**2).mean(dim=-1) for x,y in zip(preds, trues)]
-            mae = [torch.abs(x-y).mean(dim=-1) for x,y in zip(preds, trues)]
-            #mse = [((x-y)**2).mean() for x,y in zip(preds, trues)]
-            #mae = [torch.abs(x-y).mean() for x,y in zip(preds, trues)]
-            mse = torch.cat(mse)
-            mae = torch.cat(mae)
-            #mse = torch.tensor(mse).mean()
-            #mae = torch.tensor(mae).mean()
-            print (mse.shape, mae.shape)
-            print('mse:{}, mae:{}'.format(mse.mean(), mae.mean()))
-            #preds = torch.cat(preds)
-            #trues = torch.cat(trues)
+            mse = mse_running_avg.get_mean()
+            mae = mae_running_avg.get_mean()
+            
+            print ("mse:{}, mae:{}".format(mse.mean(), mae.mean()))
 
         # result save
         #folder_path = './results/' + setting + '/'
         #if not os.path.exists(folder_path):
         #    os.makedirs(folder_path)
-        
-        if not metric_avg:
-            mae, mse, rmse, mape, mspe = metric(preds, trues)
-            print('mse:{}, mae:{}'.format(mse, mae))
-            print ('result:', self.args.target, ((preds-trues)**2).mean(axis=(0,1)), np.abs(preds-trues).mean(axis=(0,1)))
         
         #f = open("result.txt", 'a')
         #f.write(setting + "  \n")
@@ -939,7 +1178,7 @@ class Exp_Main(Exp_Basic):
             os.mkdir("error_heatmap_std")
             heatmap_idx = 0
         else:
-            heatmaps = glob.glob(os.path.join("error_heatmap_std", "*%s*" % self.args.model))
+            heatmaps = glob.glob(os.path.join("error_heatmap_std", "*%s_%d*" % (self.args.model, self.args.pred_len)))
             if len(heatmaps) == 0:
                 heatmap_idx = 0
             else:
@@ -949,10 +1188,13 @@ class Exp_Main(Exp_Basic):
         for start in [0]:
             x = np.linspace(start, self.args.pred_len, num=self.args.pred_len-start)
             
-            if not metric_avg:
-                y = np.mean((preds-trues)**2, axis=(0,2))[start:]
+            if not cpu_eff:
+                if not metric_avg:
+                    y = np.mean((preds-trues)**2, axis=(0,2))[start:]
+                else:
+                    y = mse.mean(dim=0).cpu().numpy()[start:]
             else:
-                y = mse.mean(dim=0).cpu().numpy()
+                y = mse_running_avg.get_mean().mean(axis=-1)[start:]
 
             fig, (ax,ax2) = plt.subplots(nrows=2, sharex=True)
 

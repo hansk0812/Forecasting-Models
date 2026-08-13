@@ -9,11 +9,17 @@ git checkout lhf
 ### This repository supports the following datasets:
 
 ETT: https://www.github.com/MAZiqing/FEDformer
+
 Weather-5k: https://github.com/taohan10200/WEATHER-5K
+
 Jena Weather: https://www.bgc-jena.mpg.de/wetter/weather_data.html
+
 Yahoo S&P 500 Stocks: https://github.com/ranaroussi/yfinance
+
 CA PEMS Traffic Occupancy: https://github.com/guoshnBJTU/ASTGNN 
+
 NASA POWER (Prediction Of Worldwide Energy Resources) Delhi (28°N, 77°E) AgroClimatology (AG): https://power.larc.nasa.gov/api/pages/#/Data%20Requests/daily_single_point_data_request_api_temporal_daily_point_get 
+
 NIFTY Stocks Dataset: In this repository
 
 ### This repository supports the following models:
@@ -37,23 +43,29 @@ NIFTY Stocks Dataset: In this repository
 ###### Pyraformer: https://github.com/ant-research/Pyraformer
 ###### Triformer: https://github.com/razvanc92/triformer
 
-## Download the model zoo from: [https://bit.ly/LHFModelZoo](https://bit.ly/LHFModelZoo)
+## Download the model zoo from: [https://drive.google.com/drive/folders/1nqrOKRf_jJXL8cQmASnFe7nOytilYCyL?usp=sharing](https://drive.google.com/drive/folders/1nqrOKRf_jJXL8cQmASnFe7nOytilYCyL?usp=sharing)
 
 ### Use this to run the code:
 
 ```
-python run.py --root_path [ETT-small DIR PATH] --data_path ETTm2.csv --model [MODEL] --data ETTm2 --features [S,SM,M] --is_training 0 --pred_len [96,192,336,720] --enc_in [1,7] --dec_in [1,7] --c_out [1,7] --itr [N] --model_params_json trained_models.json
+python run.py --root_path [DATASET PATH] --data_path [DATASET FILE] --model [MODEL] --data [DATASET NAME] --features [S,SM,M] --is_training 0 --pred_len [HORIZON SIZE] --enc_in [NUM VARIATES] --dec_in [NUM VARIATES] --c_out [NUM VARIATES] --itr [N] --model_params_json trained_models.json
 ```
 
-If you found this repository useful, please cite: [https://arxiv.org/abs/2506.12809](https://arxiv.org/abs/2506.12809): A Review of the Long Horizon Forecasting Problem in Time Series Analysis
+If you're using multiple GPUs, use torchrun's multiprocessing because FFT doesn't work well with DataLoader. 
+
 ```
-@misc{krupakar2025reviewlonghorizonforecasting,
-      title={A Review of the Long Horizon Forecasting Problem in Time Series Analysis}, 
-      author={Hans Krupakar and Kandappan V A},
-      year={2025},
-      eprint={2506.12809},
+torchrun --nproc_per_node 2 run.py   --root_path dataset/weather/   --data_path 1  --data JenaWeather   --model FEDformer   --features M   --seq_len 720 --pred_len 720 --label_len 480   --enc_in 8   --dec_in 8   --c_out 8   --itr 1  --batch_size 100 --des "Exp1" --task_id "Exp1" --train_epochs 5 --patience 10   --is_training 1   --factor 3   --d_ff 2048   --e_layers 1   --d_layers 1   --d_model 512   --n_heads 8   --dropout 0.2   --embed none   --use_multi_gpu   --devices "0,1"
+```
+
+If you found this repository useful, please consider citing: [https://arxiv.org/abs/2601.02094](https://arxiv.org/abs/2601.02094): Horizon Activation Mapping for Neural Networks in Time Series Forecasting
+```
+@misc{hans2026horizonactivationmappingneural,
+      title={Horizon Activation Mapping for Neural Networks in Time Series Forecasting}, 
+      author={Krupakar Hans and V A Kandappan},
+      year={2026},
+      eprint={2601.02094},
       archivePrefix={arXiv},
       primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2506.12809}, 
+      url={https://arxiv.org/abs/2601.02094}, 
 }
 ```

@@ -58,10 +58,10 @@ class Dataset_AG_Delhi(Dataset):
         td = [start_date + timedelta(days=idx) for idx in range(df_raw.shape[0])]
         df_raw.insert(loc=0, column="date", value=pd.to_datetime(td))
         
-        train_end = int(self.SPLITS[0] * len(df_raw))
-        val_end = train_end + int(self.SPLITS[1] * len(df_raw))
+        train_end = int(self.SPLITS[0] * len(df_raw)) + self.seq_len + self.pred_len - 1
+        val_end = int((self.SPLITS[0] + self.SPLITS[1]) * len(df_raw)) + self.seq_len + self.pred_len - 1
         test_end = len(df_raw)
-        border1s = [0, train_end, val_end]
+        border1s = [0, train_end - self.seq_len - self.pred_len + 1, val_end - self.seq_len - self.pred_len - 1]
         border2s = [train_end, val_end, test_end]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
@@ -133,9 +133,3 @@ class Dataset_AG_Delhi(Dataset):
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
 
-if __name__ == "__main__":
-
-    data = Dataset_AG_Delhi("dataset/Delhi_NASA_POWER_AgroClimatology/", data_path="delhi.csv", features='M')
-    for x, y, xm, ym, c in data:
-        print (x.shape, y.shape, xm.shape, ym.shape, c.shape)
-        break
