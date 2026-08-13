@@ -14,7 +14,8 @@ warnings.filterwarnings('ignore')
 class Dataset_ETT_hour(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='HUFL', scale=True, timeenc=0, freq='h', cycle=32):
+                 target='HUFL', scale=True, timeenc=0, freq='h', cycle=32,
+                 select_variates=None):
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
@@ -38,6 +39,9 @@ class Dataset_ETT_hour(Dataset):
 
         self.root_path = root_path
         self.data_path = data_path
+
+        self.select_variates = select_variates
+
         self.__read_data__()
 
     def __read_data__(self):
@@ -51,11 +55,15 @@ class Dataset_ETT_hour(Dataset):
         border2 = border2s[self.set_type]
 
         if self.features == 'M' or self.features == 'MS':
-            cols_data = df_raw.columns[1:]
+            cols_data = df_raw.columns[1:].tolist()
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # First variates heuristic
             df_data = df_raw[cols_data]
             nf=1
         elif self.features == 'SM':
-            cols_data = df_raw.columns[1:]
+            cols_data = df_raw.columns[1:].tolist()
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # First variates heuristic
             df_data = pd.concat([df_raw[[c]].rename(columns={c:"M"}) for c in cols_data], axis=0).sort_index().reset_index(drop=True)
             nf=len(cols_data)
         elif self.features == 'S':
@@ -112,7 +120,8 @@ class Dataset_ETT_hour(Dataset):
 class Dataset_ETT_minute(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTm1.csv',
-                 target='OT', scale="zscore", timeenc=0, freq='t', cycle=32):
+                 target='OT', scale="zscore", timeenc=0, freq='t', cycle=32,
+                 select_variates=None):
 
         # size [seq_len, label_len, pred_len]
         # info
@@ -139,6 +148,9 @@ class Dataset_ETT_minute(Dataset):
 
         self.root_path = root_path
         self.data_path = data_path
+
+        self.select_variates = select_variates
+
         self.__read_data__()
 
     def __read_data__(self):
@@ -154,11 +166,15 @@ class Dataset_ETT_minute(Dataset):
         border2 = border2s[self.set_type]
 
         if self.features == 'M' or self.features == 'MS':
-            cols_data = df_raw.columns[1:]
+            cols_data = df_raw.columns[1:].tolist()
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # First variates heuristic
             df_data = df_raw[cols_data]
             nf=1
         elif self.features == 'SM':
-            cols_data = df_raw.columns[1:]
+            cols_data = df_raw.columns[1:].tolist()
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # First variates heuristic
             df_data = pd.concat([df_raw[[c]].rename(columns={c:"M"}) for c in cols_data], axis=0).sort_index().reset_index(drop=True)
             nf=len(cols_data)
         elif self.features == 'S':
@@ -226,7 +242,8 @@ class Dataset_ETT_minute(Dataset):
 class Dataset_Custom(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, timeenc=0, freq='h'):
+                 target='OT', scale=True, timeenc=0, freq='h',
+                 select_variates=None):
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
@@ -250,6 +267,9 @@ class Dataset_Custom(Dataset):
 
         self.root_path = root_path
         self.data_path = data_path
+
+        self.select_variates = select_variates
+
         self.__read_data__()
 
     def __read_data__(self):
@@ -274,7 +294,9 @@ class Dataset_Custom(Dataset):
         border2 = border2s[self.set_type]
 
         if self.features == 'M' or self.features == 'MS':
-            cols_data = df_raw.columns[1:]
+            cols_data = df_raw.columns[1:].tolist()
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # First variates heuristic
             df_data = df_raw[cols_data]
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
@@ -325,7 +347,8 @@ class Dataset_Custom(Dataset):
 class Dataset_Pred(Dataset):
     def __init__(self, root_path, flag='pred', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, inverse=False, timeenc=0, freq='15min', cols=None):
+                 target='OT', scale=True, inverse=False, timeenc=0, freq='15min', cols=None,
+                 select_variates=None):
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
@@ -348,6 +371,7 @@ class Dataset_Pred(Dataset):
         self.cols = cols
         self.root_path = root_path
         self.data_path = data_path
+        self.select_variates = select_variates
         self.__read_data__()
 
     def __read_data__(self):
@@ -364,12 +388,15 @@ class Dataset_Pred(Dataset):
             cols = list(df_raw.columns)
             cols.remove(self.target)
             cols.remove('date')
+        if not self.select_variates is None:
+            cols = cols[:self.select_variates]
+
         df_raw = df_raw[['date'] + cols + [self.target]]
         border1 = len(df_raw) - self.seq_len
         border2 = len(df_raw)
 
         if self.features == 'M' or self.features == 'MS':
-            cols_data = df_raw.columns[1:]
+            cols_data = df_raw.columns[1:].tolist()
             df_data = df_raw[cols_data]
             nf = len(cols_data)
         elif self.features == 'S':

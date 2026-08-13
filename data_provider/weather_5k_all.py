@@ -28,7 +28,8 @@ class Dataset_Weather_Stations_ALL(Dataset):
     
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, timeenc=0, freq='h', seasonal_patterns=None, cycle=32):
+                 target='OT', scale=True, timeenc=0, freq='h', seasonal_patterns=None, cycle=32,
+                 select_variates=None):
         
         # size [seq_len, label_len, pred_len]
         # info
@@ -97,6 +98,8 @@ class Dataset_Weather_Stations_ALL(Dataset):
         self.lock = Lock()
         self.data_stamp = None
 
+        self.select_variates = select_variates
+
         self.scaler = StandardScaler(
             mean=np.array([12.70852261, 6.52705582,191.18867587,3.36941836,1014.85317029])[None,:], 
             std=np.array([13.08167293, 12.13875438, 99.67403125,  2.65729403,  9.17480999])[None,:])
@@ -142,10 +145,14 @@ class Dataset_Weather_Stations_ALL(Dataset):
         # print(f'phase: {self.flag}, from {border_st} to {border_ed}')
 
         if self.features == 'M' or self.features == 'MS':
-            cols_data = df_raw.columns[1:]
+            cols_data = df_raw.columns[1:].tolist()
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # Select first variates convention
             df_data = df_raw[cols_data]
         elif self.features == 'SM':
-            cols_data = df_raw.columns[1:]
+            cols_data = df_raw.columns[1:].tolist()
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # Select first variates convention
             df_data = pd.concat([df_raw[[c]].rename(columns={c:"M"}) for c in cols_data], axis=0).sort_index().reset_index(drop=True)
         elif self.features == 'S':
             df_data = df_raw[[self.target]]

@@ -12,15 +12,16 @@ from datetime import datetime, timedelta
 
 warnings.filterwarnings('ignore')
 
-
 # Download the ASTGNN repository from github: https://github.com/guoshnBJTU/ASTGNN for the dataset used here
+
 class Dataset_PEMS_Traffic(Dataset):
     
     SPLITS = [0.6, 0.2, 0.2] # train, val, test
 
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path=None,
-                 target='0', scale=True, timeenc=0, freq='d', cycle=32):
+                 target='0', scale=True, timeenc=0, freq='d', cycle=32,
+                 select_variates=None):
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
@@ -46,6 +47,9 @@ class Dataset_PEMS_Traffic(Dataset):
 
         self.root_path = root_path
         self.data_path = data_path
+
+        self.select_variates = select_variates
+
         self.__read_data__()
 
     def __read_data__(self):
@@ -71,20 +75,27 @@ class Dataset_PEMS_Traffic(Dataset):
         td = [start_date + timedelta(minutes=5*idx) for idx in range(df_raw.shape[0])]
         df_raw.insert(loc=0, column="date", value=pd.to_datetime(td))
 
-        train_end = int(self.SPLITS[0] * len(df_raw)) + self.seq_len + self.pred_len - 1
-        val_end = int((self.SPLITS[0] + self.SPLITS[1]) * len(df_raw)) + self.seq_len + self.pred_len - 1 
-        test_end = len(df_raw)
-        border1s = [0, train_end - self.seq_len - self.pred_len + 1, val_end - self.seq_len - self.pred_len + 1]
-        border2s = [train_end, val_end, test_end]
+        dataset_len = len(df_raw) - self.seq_len - self.pred_len + 1
+        train_end = int(self.SPLITS[0] * dataset_len)
+        val_end = train_end + int(self.SPLITS[1] * dataset_len)
+        test_end = dataset_len
+        border1s = [0, train_end, val_end]
+        border2s = [train_end + self.seq_len + self.pred_len - 1, 
+                    val_end + self.seq_len + self.pred_len - 1, 
+                    test_end + self.seq_len + self.pred_len - 1]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
         if self.features == 'M' or self.features == 'MS':
-            cols_data = df_raw.columns[1:]
+            cols_data = df_raw.columns[1:].tolist()
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # Select first variates convention
             df_data = df_raw[cols_data]
             nf=1
         elif self.features == 'SM':
-            cols_data = df_raw.columns[1:]
+            cols_data = df_raw.columns[1:].tolist()
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # Select first variates convention
             df_data = pd.concat([df_raw[[c]].rename(columns={c:"M"}) for c in cols_data], axis=0).sort_index().reset_index(drop=True)
             nf=len(cols_data)
             self.num_features = 1
@@ -94,6 +105,9 @@ class Dataset_PEMS_Traffic(Dataset):
             self.num_features = 1
         
         df_stamp = df_raw[['date']][border1:border2]
+
+        self.freq = df_stamp.iloc[1] - df_stamp.iloc[0]
+
         df_stamp['date'] = pd.to_datetime(df_stamp.date, format="%Y-%m-%d")
         if self.timeenc == 0:
             df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
@@ -121,6 +135,9 @@ class Dataset_PEMS_Traffic(Dataset):
         print ("Dataset total number of timesteps: %d" % len(data))
         print ("Dataset length: %d" % len(self))
  
+    def frequency(self):
+        return self.freq
+    
     def get_num_features(self):
         return self.num_features
 
@@ -145,3 +162,24 @@ class Dataset_PEMS_Traffic(Dataset):
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
 
+if __name__ == "__main__":
+
+    data = Dataset_PEMS_Traffic("dataset/ASTGNN/data/PEMS03/", data_path="PEMS03.npz", features='M')
+    for x, y, xm, ym, c in data:
+        print (x.shape, y.shape, xm.shape, ym.shape, c.shape)
+        break
+
+    data = Dataset_PEMS_Traffic("dataset/ASTGNN/data/PEMS04/", data_path="PEMS04.npz", features='M')
+    for x, y, xm, ym, c in data:
+        print (x.shape, y.shape, xm.shape, ym.shape, c.shape)
+        break
+
+    data = Dataset_PEMS_Traffic("dataset/ASTGNN/data/PEMS07/", data_path="PEMS07.npz", features='M')
+    for x, y, xm, ym, c in data:
+        print (x.shape, y.shape, xm.shape, ym.shape, c.shape)
+        break
+
+    data = Dataset_PEMS_Traffic("dataset/ASTGNN/data/PEMS08/", data_path="PEMS08.npz", features='M')
+    for x, y, xm, ym, c in data:
+         print (x.shape, y.shape, xm.shape, ym.shape, c.shape)
+         break

@@ -20,7 +20,8 @@ class Dataset_Yahoo_Finance(Dataset):
 
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path=None,
-                 target='MSFT', scale=True, timeenc=0, freq='d', cycle=32):
+                 target='MSFT', scale=True, timeenc=0, freq='d', cycle=32,
+                 select_variates=None):
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
@@ -46,6 +47,9 @@ class Dataset_Yahoo_Finance(Dataset):
 
         self.root_path = root_path
         self.data_path = data_path
+
+        self.select_variates = select_variates
+
         self.__read_data__()
 
     def __read_data__(self):
@@ -74,11 +78,15 @@ class Dataset_Yahoo_Finance(Dataset):
         border2 = border2s[self.set_type]
 
         if self.features == 'M' or self.features == 'MS':
-            cols_data = df_raw.columns[1:]
+            cols_data = df_raw.columns[1:].tolist()
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # Select first variates convention
             df_data = df_raw[cols_data]
             nf=1
         elif self.features == 'SM':
-            cols_data = df_raw.columns[1:]
+            cols_data = df_raw.columns[1:].tolist()
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # Select first variates convention
             df_data = pd.concat([df_raw[[c]].rename(columns={c:"M"}) for c in cols_data], axis=0).sort_index().reset_index(drop=True)
             nf=len(cols_data)
         elif self.features == 'S':

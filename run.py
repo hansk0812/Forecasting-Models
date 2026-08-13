@@ -66,6 +66,7 @@ def main():
     # model define
     parser.add_argument('--enc_in', type=int, default=7, help='encoder input size')
     parser.add_argument('--dec_in', type=int, default=7, help='decoder input size')
+    parser.add_argument('--select_variates', type=int, default=None, help='Select some variates out of enc_in variates\' dataset')
     parser.add_argument('--c_out', type=int, default=7, help='output size')
     parser.add_argument('--d_model', type=int, default=512, help='dimension of model')
     parser.add_argument('--n_heads', type=int, default=8, help='num of heads')
@@ -101,6 +102,7 @@ def main():
     parser.add_argument('--gpu', type=int, default=0, help='gpu')
     parser.add_argument('--use_multi_gpu', action='store_true', help='use multiple gpus', default=False)
     parser.add_argument('--devices', type=str, default='0,1', help='device ids of multi gpus')
+    parser.add_argument('--local-rank', type=int, default=None, help="torch.distributed argument for DDP")
     
     parser.add_argument('--load_from_chkpt', default=None, help="Path to pretrained model to resume training from")
     parser.add_argument('--gpu_memory_usage', action="store_true", help="If True, prints GPU memory usage summary and exits")
@@ -108,6 +110,7 @@ def main():
     parser.add_argument('--backward_pass_multivariate', action="store_true", help="Set flag to enable multivariate gradient norm calculations")
     parser.add_argument('--calculate_acf', default=None, type=int, help="Uses a lag of value specified as argument for ACF")
     parser.add_argument('--backward_pass_set', default="train", type=str, help="One of [\"train\", \"val\", \"test\"]")
+    parser.add_argument('--gradnorms_dir', default=None, help="Use directory to store input gradnorms")
 
     parser.add_argument('--model_params_json', default=None, help="Path to JSON file with model hyperparameters and model zoo dir if available")
     parser.add_argument('--patches_size', default=None, type=int, help="Divide H into H/patches_size models")
@@ -122,19 +125,24 @@ def main():
     
     args = parser.parse_args()
 
+    assert args.select_variates is None or args.select_variates < args.enc_in
+    if not args.select_variates is None and 'M' in args.features:
+        args.enc_in = args.select_variates
+        args.dec_in = args.select_variates
+
     if args.model == "FEDformer":
         args.factor = args.modes
 
     assert args.backward_pass_set in ["train", "val", "test"], "backward_pass_set argument not in train, val, test"
 
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
-
+    
     if args.use_gpu and args.use_multi_gpu:
         args.devices = args.devices.replace(' ', '')
         device_ids = args.devices.split(',')
         args.device_ids = [int(id_) for id_ in device_ids]
         args.gpu = args.device_ids[0]
-    
+        
     if not args.model_params_json is None and os.path.exists(args.model_params_json):
         with open(args.model_params_json, 'r') as f:
             params = json.load(f)
@@ -179,12 +187,13 @@ def main():
     if args.is_training:
         for ii in range(args.itr):
             # setting record of experiments
-            setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_ss{}_eb{}_dt{}_{}_{}'.format(
+            setting = '{}_{}_{}_modes{}_{}_ft{}{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_ss{}_eb{}_dt{}_{}_{}'.format(
                 args.task_id,
                 args.model,
                 args.mode_select,
                 args.modes,
                 args.data,
+                "" if args.select_variates is None else args.select_variates,
                 args.features,
                 args.seq_len,
                 args.label_len,
@@ -220,12 +229,13 @@ def main():
             torch.cuda.empty_cache()
     else:
         ii = 0
-        setting = '{}_{}_{}_modes{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_ss{}_eb{}_dt{}_{}_{}'.format(
+        setting = '{}_{}_{}_modes{}_{}_ft{}{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_pt{}_ss{}_eb{}_dt{}_{}_{}'.format(
                 args.task_id,
                 args.model,
                 args.mode_select,
                 args.modes,
                 args.data,
+                "" if args.select_variates is None else args.select_variates,
                 args.features,
                 args.seq_len,
                 args.label_len,

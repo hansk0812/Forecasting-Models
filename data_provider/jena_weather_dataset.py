@@ -18,8 +18,9 @@ class Dataset_Weather(Dataset):
     TRAIN_VAL_TEST = (0.8, 0.1, 0.1)
 
     def __init__(self, root_path, flag='train', size=None,
-                 features='S', data_path='1',
-                 target="T (degC)", scale="zscore", timeenc=0, freq='t', cycle=32):
+                 features='S', data_path=1,
+                 target="T (degC)", scale="zscore", timeenc=0, freq='t', cycle=32,
+                 select_variates=None):
         # data_path: 1 - Beutenberg (includes CO2 and Photosynthetic Radiation: 9 features)
         # data_path: 2 - Beutenberg and Saaleaue (excludes solar radiation features: 7 features) 
         # plant and soil data and other features: Not Implemented
@@ -41,7 +42,7 @@ class Dataset_Weather(Dataset):
         
         # Chosen without considerations in environmental sciences, change if necessary
         # If adding a column name that uses the encoding, please change the column name using ascii in folder_to_df()
-        if features == 'M':
+        if 'M' in features:
             if data_path == '1':
                 self.vars = ["p (mbar)", "T (degC)", "sh (g/kg)", 
                              "H2OC (mmol/mol)", "rho (g/m**3)", "wv (m/s)", 
@@ -53,7 +54,10 @@ class Dataset_Weather(Dataset):
                              "wd (deg)"]
             else:
                 raise NotImplementedError
-        
+            
+            if not select_variates is None:
+                self.vars = self.vars[:select_variates]
+
         else:
             self.vars = [target]
         self.features = features
@@ -66,6 +70,7 @@ class Dataset_Weather(Dataset):
 
         self.root_path = root_path
         self.data_path = data_path
+
         self.__read_data__()
     
     def folder_to_df(self, csv_files):
@@ -100,28 +105,28 @@ class Dataset_Weather(Dataset):
 
         df_raw = self.folder_to_df(glob.glob(os.path.join(self.root_path, "mpi_roof*.csv")))
         dataset_length = len(df_raw) - self.seq_len - self.pred_len + 1
-        train_indices = (0, int(self.TRAIN_VAL_TEST[0] * dataset_length) + self.seq_len + self.pred_len - 1)
+        train_indices = (0, int(self.TRAIN_VAL_TEST[0] * dataset_length))
         if self.set_type == 0:
             indices = train_indices
         elif self.set_type == 1:
             indices = (int(self.TRAIN_VAL_TEST[0] * dataset_length), \
-                       int((self.TRAIN_VAL_TEST[0] + self.TRAIN_VAL_TEST[1]) * dataset_length) + self.seq_len + self.pred_len - 1)
+                       int((self.TRAIN_VAL_TEST[0] + self.TRAIN_VAL_TEST[1]) * dataset_length))
         else:
             indices = (int((self.TRAIN_VAL_TEST[0] + self.TRAIN_VAL_TEST[1]) * dataset_length), \
-                       len(df_raw))
+                       dataset_length)
         
         if self.data_path == '2':
             df_raw2 = self.folder_to_df(glob.glob(os.path.join(self.root_path, "mpi_saale*.csv")))
             dataset_length = len(df_raw2) - self.seq_len - self.pred_len + 1
-            train_indices = [train_indices] + [(0, int(self.TRAIN_VAL_TEST[0] * dataset_length) + self.seq_len + self.pred_len - 1)]
+            train_indices = [train_indices] + [(0, int(self.TRAIN_VAL_TEST[0] * dataset_length))]
             if self.set_type == 0:
                 indices = train_indices
             elif self.set_type == 1:
                 indices = [indices] + [(int(self.TRAIN_VAL_TEST[0] * dataset_length), \
-                                        int((self.TRAIN_VAL_TEST[0] + self.TRAIN_VAL_TEST[1]) * dataset_length) + self.seq_len + self.pred_len - 1)]
+                                        int((self.TRAIN_VAL_TEST[0] + self.TRAIN_VAL_TEST[1]) * dataset_length))]
             else:
                 indices = [indices] + [(int((self.TRAIN_VAL_TEST[0] + self.TRAIN_VAL_TEST[1]) * dataset_length), \
-                                        len(df_raw2))]
+                                        dataset_length)]
 
         if self.features == 'M' or self.features == 'MS':
             
@@ -175,6 +180,12 @@ class Dataset_Weather(Dataset):
             df_stamp2['Date Time'] = pd.to_datetime(df_stamp2["Date Time"], format="%d.%m.%Y %H:%M:%S")
             df_stamp2 = df_stamp2.rename(columns={"Date Time": "date"})
 
+        try:
+            self.freq = df_stamp["date"].drop_duplicates(keep='first').iloc[1] - df_stamp["date"].iloc[0]
+        except Exception:
+            self.freq = 0
+            pass
+        
         if self.timeenc == 0:
             df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
             df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
@@ -182,7 +193,7 @@ class Dataset_Weather(Dataset):
             df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
             df_stamp['minute'] = df_stamp.date.apply(lambda row: row.minute, 1)
             df_stamp['minute'] = df_stamp.minute.map(lambda x: x // 15)
-            data_stamp = df_stamp.drop(["date"], axis=1).values
+            data_stamp = df_stamp.drop(['date'], axis=1).values
         elif self.timeenc == 1:
             data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
             data_stamp = data_stamp.transpose(1, 0)
@@ -223,6 +234,9 @@ class Dataset_Weather(Dataset):
     def get_num_features(self):
         return len(self.vars)
     
+    def frequency(self):
+        return self.freq
+
     def __getitem__(self, index):
         s_begin = index
         s_end = s_begin + self.seq_len
@@ -239,8 +253,7 @@ class Dataset_Weather(Dataset):
         return seq_x, seq_y, seq_x_mark, seq_y_mark, cycle_index
 
     def __len__(self):
-        return len(self.data_x) - self.pred_len - self.seq_len + 1
+        return len(self.data_x) - self.seq_len - self.pred_len + 1
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
-

@@ -22,7 +22,8 @@ class Dataset_NIFTY(Dataset):
 
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path=None,
-                 target='T2M', scale=True, timeenc=0, freq='d', cycle=32):
+                 target='T2M', scale=True, timeenc=0, freq='d', cycle=32,
+                 select_variates=None):
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
@@ -48,9 +49,14 @@ class Dataset_NIFTY(Dataset):
 
         self.root_path = root_path
         self.data_path = data_path
+
+        self.select_variates = select_variates
+
         self.__read_data__()
 
-        print (flag, len(self))
+    def frequency(self):
+        
+        return self.time_diff
 
     def __read_data__(self):
         self.scaler = StandardScaler()
@@ -98,22 +104,25 @@ class Dataset_NIFTY(Dataset):
             os.rename(fname, fname.replace(self.data_path, self.data_path[:-4] + "_original_with_nans" + self.data_path[-4:]))
             df_raw.to_csv(fname, index=False)
 
-        dataset_l = len(df_raw) - self.seq_len - self.pred_len + 1
-        train_end = int(self.SPLITS[0] * dataset_l)
-        val_end = train_end + int(self.SPLITS[1] * dataset_l)
-        test_end = dataset_l
+        train_end = int(self.SPLITS[0] * len(df_raw))
+        val_end = train_end + int(self.SPLITS[1] * len(df_raw))
+        test_end = len(df_raw)
         border1s = [0, train_end, val_end]
-        border2s = [train_end + self.pred_len + self.seq_len - 1, val_end + self.pred_len + self.seq_len - 1, test_end + self.pred_len + self.seq_len - 1]
+        border2s = [train_end, val_end, test_end]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
         if self.features == 'M' or self.features == 'MS':
             cols_data = df_raw.columns[1:]
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # Select first variates convention
             df_data = df_raw[cols_data]
             nf=1
             self.num_features = len(cols_data)
         elif self.features == 'SM':
             cols_data = df_raw.columns[1:]
+            if not self.select_variates is None:
+                cols_data = cols_data[:self.select_variates] # Select first variates convention
             df_data = pd.concat([df_raw[[c]].rename(columns={c:"M"}) for c in cols_data], axis=0).sort_index().reset_index(drop=True)
             nf=len(cols_data)
             self.num_features = 1
@@ -124,6 +133,9 @@ class Dataset_NIFTY(Dataset):
         
         df_stamp = df_raw[['date']][border1:border2]
         df_stamp['date'] = pd.to_datetime(df_stamp.date, format="%Y-%m-%d %H:%M:%S")
+        
+        self.time_diff = df_stamp['date'].iloc[1] - df_stamp['date'].iloc[0]
+
         if self.timeenc == 0:
             df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
             df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
@@ -169,8 +181,14 @@ class Dataset_NIFTY(Dataset):
         return seq_x, seq_y, seq_x_mark, seq_y_mark, cycle
 
     def __len__(self):
-        return len(self.data_x) - self.pred_len - self.seq_len + 1
+        return len(self.data_x) - self.seq_len - self.pred_len + 1
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
 
+if __name__ == "__main__":
+
+    data = Dataset_NIFTY("dataset/NIFTYStocks/", data_path="nifty_v2.csv", features='M')
+    for x, y, xm, ym, c in data:
+        print (x.shape, y.shape, xm.shape, ym.shape, c.shape)
+        break
