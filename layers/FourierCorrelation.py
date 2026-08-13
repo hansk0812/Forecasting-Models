@@ -118,7 +118,7 @@ class FourierCrossAttention(nn.Module):
         else:
             raise Exception('{} actiation function is not implemented'.format(self.activation))
         xqkv_ft = torch.einsum("bhxy,bhey->bhex", xqk_ft, xk_ft_)
-        xqkvw = torch.einsum("bhex,heox->bhox", xqkv_ft, self.weights1)
+        xqkvw = torch.einsum("bhex,...heox->bhox", xqkv_ft, self.weights1)
         out_ft = torch.zeros(B, H, E, L // 2 + 1, device=xq.device, dtype=torch.cfloat)
         for i, j in enumerate(self.index_q):
             out_ft[:, :, :, j] = xqkvw[:, :, :, i]

@@ -11,6 +11,8 @@ import os
 import glob
 import re
 
+from itertools import chain
+
 import numpy as np
 
 import random
@@ -106,6 +108,9 @@ def find_poly_area(coords, h):
     return return_area, [p[-1] for p in polys]
 
 def plot_HAM(values, model, colour_idx, plot_colors_per_model, loss_based_weights=None, h=None, cutoff_type=None):
+    
+    global text
+
     p, = plt.plot(np.arange(0, len(values)), values, label=model, 
                     color=plot_colors_per_model[colour_idx], linewidth=1) #0.5) 
     plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors_per_model[colour_idx], linestyle='--', linewidth=0.7, alpha=0.5) #0.5) 
@@ -209,9 +214,12 @@ if __name__ == "__main__":
             models_variable_name = None
     else:
         models_variable_name = None
-
-    H = [96, 192, 336, 720]
     
+    files = [glob.glob(os.path.join(args.folder, "*%s*gradnorms.txt" % m)) for m in args.models]
+    files = list(chain.from_iterable(files))
+    H = set([int(x.split('_')[1]) for x in files])
+    H = sorted(list(H))
+
     plots = OrderedDict()
     
     # select a few colors
@@ -224,7 +232,7 @@ if __name__ == "__main__":
     plot_colors_per_model = np.array(plot_colors)[args.start_color_idx]
     
     # heatmap for CycleNet epochs curves
-    #"""
+    """
     import matplotlib as mpl
     cmap = mpl.colormaps["BuPu"] #["OrRd"]
     # Take colors at regular intervals spanning the colormap.
@@ -381,6 +389,7 @@ if __name__ == "__main__":
 
         plot_diffs = OrderedDict()
         point_plts = []
+        text = ""
         for cutoff_type in types:
             
             fnames = sorted(glob.glob(os.path.join(args.folder, "*_%d_%s_%s.txt" % (
@@ -483,12 +492,25 @@ if __name__ == "__main__":
                                     keys = [x.split('=')[0] for x in gradnorm_str.split(' ')]
                                 values.append([float(x.split('=')[1].strip()) for x in gradnorm_str.split(' ')])
                     
+                    # Remove unupdated weights from mean: Useful for MR-DDPM
+                    # Leads to syntax error by length differences if some updates are 0 by design - almost impossible case
+                    if isinstance(values[0], list):
+
+                        num_weights = len(values[0])
+                        if cutoff_type == "forward":
+                            values = [[x for x in row if x != 0] if idx != 0 else row for idx, row in enumerate(values)]
+                            values[0] = [0 for _ in range(len(values[1]))]
+                        else:
+                            values = [[x for x in row if x != 0] if idx != len(values) - 1 else row for idx, row in enumerate(values)]
+                            values[-1] = [0 for _ in range(len(values[0]))]
+                        print ("Removed %d %s layers with zero activity throughout" % (num_weights - len(values[0]), model))
+
                     # values: (h,l) horizon x num_layers
                     # ASSUMPTION: Interpolation independently is the same as interpolation of the mean
                     # ALSO TRANSPOSES VALUES
                     if len(values) != h + 1:
                         if isinstance(values[0], float):
-                            x_range = np.arange(0, h+1, np.round(h, -2)/(len(values)-2)).tolist() + [h]
+                            x_range = np.arange(0, h+1, (h - h % 100)/(len(values)-2)).tolist() + [h]
                             # unpredictable cubic interpolation when sequence is decreasing; reverse
                             if cutoff_type != "forward":
                                 values = list(reversed(values))
@@ -513,7 +535,9 @@ if __name__ == "__main__":
                                     values_s = values[:,jdx][::-1]
                                 else:
                                     values_s = values[:,jdx]
-                                x_range = np.arange(0, h+1, np.round(h, -2)/(len(values_s)-2)).tolist() + [h]
+                                x_range = np.linspace(0., h, int(h/20) + 1) 
+                                print (x_range)
+                                #x_range = np.arange(0, h+1, (h - h % 20)/(len(values_s)-2)).tolist() + [h]
                                 values_spline = make_interp_spline(x_range, values_s)
                                 X = np.linspace(0, h, h+1)
                                 if cutoff_type != "forward":
@@ -556,12 +580,23 @@ if __name__ == "__main__":
                                 
                                 if isinstance(args.interpolated, dict):
                                     if args.interpolated[model] == 0:
-                                        args.interpolated[model] = 1./max(all_values)
-                                        model_legend = model + " (%.4f)" % max(all_values)
+                                        if model == "SpaceTime":
+                                            args.interpolated[model] = 1./max(all_values - min(all_values))
+                                            model_legend = model + " (%.4f ; +%.4f)" % (max(all_values - min(all_values)), min(all_values))
+                                        else:
+                                            args.interpolated[model] = 1./max(all_values)
+                                            model_legend = model + " (%.4f)" % max(all_values)
                                     else:
                                         fc = 1./args.interpolated[model]
-                                        model_legend = model + " (%.4f)" % fc
+                                        if model == "SpaceTime":
+                                            model_legend = model + " (%.4f ; +%.4f)" % (max(all_values - min(all_values)), min(all_values))
+                                        else:
+                                            model_legend = model + " (%.4f)" % fc
+                                    
+                                    if model == "SpaceTime":
+                                        all_values -= min(all_values)
                                     all_values *= args.interpolated[model] #/= max(all_values)
+
                                 else:
                                     model_legend = model
 
@@ -592,11 +627,31 @@ if __name__ == "__main__":
                                 
                                 if isinstance(args.interpolated, dict):
                                     if args.interpolated[args.name[models_variable_name[model]["model_idx"]+jdx]] == 0:
-                                        args.interpolated[args.name[models_variable_name[model]["model_idx"]+jdx]] = 1./max(value)
-                                        model_legend = args.name[models_variable_name[model]["model_idx"]+jdx] + " (%.4f)" % max(value)
+                                        if model == "SpaceTime":
+                                            args.interpolated[
+                                                args.name[models_variable_name[model]["model_idx"]+jdx]] = \
+                                                    1./max(value - min(value))
+                                            model_legend = args.name[
+                                                            models_variable_name[model]["model_idx"]+jdx] + \
+                                                                " (%.4f ; +%.4f)" % (max(value - min(value)), min(value))           
+                                        else:
+                                            args.interpolated[
+                                                args.name[models_variable_name[model]["model_idx"]+jdx]] = \
+                                                    1./max(value)
+                                            model_legend = args.name[
+                                                            models_variable_name[model]["model_idx"]+jdx] + \
+                                                                 " (%.4f)" % max(value)
                                     else:
                                         fc = 1./args.interpolated[args.name[models_variable_name[model]["model_idx"]+jdx]]
-                                        model_legend = args.name[models_variable_name[model]["model_idx"]+jdx] + " (%.4f)" % fc
+                                        if model == "SpaceTime":
+                                            model_legend = args.name[models_variable_name[model]["model_idx"]+jdx] + \
+                                                            " (%.4f ; +%.4f)" % (fc, min(value))
+                                        else:
+                                            model_legend = args.name[models_variable_name[model]["model_idx"]+jdx] + " (%.4f)" % fc
+
+                                    if model == "SpaceTime":
+                                        value -= min(value)
+
                                     value *= args.interpolated[args.name[models_variable_name[model]["model_idx"]+jdx]] #/= max(value)
                                 else:
                                     model_legend = args.name[models_variable_name[model]["model_idx"]+jdx]
@@ -614,11 +669,22 @@ if __name__ == "__main__":
                             
                             if isinstance(args.interpolated, dict):
                                 if args.interpolated[model] == 0:
-                                    args.interpolated[model] = 1./max(values)
-                                    model_legend = model + " (%.4f)" % max(values)
+                                    if model == "SpaceTime":
+                                        args.interpolated[model] = 1./max(values - min(values))
+                                        model_legend = model  + " (%.4f ; +%.4f)" % (max(values - min(values)), min(values))
+                                    else:
+                                        args.interpolated[model] = 1./max(values)
+                                        model_legend = model + " (%.4f)" % max(values)
                                 else:
                                     fc = 1./args.interpolated[model] 
-                                    model_legend = model + " (%.4f)" % fc
+                                    if model == "SpaceTime":
+                                        model_legend = model + " (%.4f ; +%.4f)" % (fc, min(values))
+                                    else:
+                                        model_legend = model + " (%.4f)" % fc
+
+                                if model == "SpaceTime":
+                                    values -= min(values)
+
                                 values *= args.interpolated[model]
                             else:
                                 model_legend = model
@@ -633,11 +699,22 @@ if __name__ == "__main__":
                                 print (model, "max value:", max(values), "interpolation factor:", 1./max(values))
                             if isinstance(args.interpolated, dict):
                                 if args.interpolated[model] == 0:
-                                    args.interpolated[model] = 1./max(values)
-                                    model_legend = model + " (%.4f)" % max(values)
+                                    if model == "SpaceTime":
+                                        args.interpolated[model] = 1./max(values - min(values))
+                                        model_legend = model + " (%.4f ; +%.4f)" % (max(values - min(values)), min(values))
+                                    else:
+                                        args.interpolated[model] = 1./max(values)
+                                        model_legend = model + " (%.4f)" % max(values)
                                 else:
                                     fc = 1./args.interpolated[model] 
-                                    model_legend = model + " (%.4f)" % fc
+                                    if model == "SpaceTime":
+                                        model_legend = model + " (%.4f ; +%.4f)" % (fc, min(values))
+                                    else:
+                                        model_legend = model + " (%.4f)" % fc
+
+                                if model == "SpaceTime":
+                                    values -= min(values)
+
                                 values *= args.interpolated[model]
                             else:
                                 model_legend = model
@@ -670,6 +747,7 @@ if __name__ == "__main__":
                             for h_ in range(1, h+1):
                                 #plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors[idx], linestyle='--')
                                 #plt.plot(list(range(h_)), values[:h_], color=plot_colors[idx], linestyle='--')
+                                
                                 area, intersect_pts = find_poly_area(pts, h_)
                                 poly_areas[cutoff_type][n].append(area)
                                 
@@ -684,6 +762,7 @@ if __name__ == "__main__":
                         for h_ in range(1, h+1):
                             #plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors[idx], linestyle='--')
                             #plt.plot(list(range(h_)), values[:h_], color=plot_colors[idx], linestyle='--')
+                           
                             area, intersect_pts = find_poly_area(pts, h_)
                             poly_areas[cutoff_type][model].append(area)
                             
@@ -1042,10 +1121,12 @@ if __name__ == "__main__":
         #plt.show()
 
     # Plot interpolated area plot for H=720 model only!
-    if not areas[0]["forward"] and not areas[1]["forward"] and not areas[2]["forward"]:
+    if not any([x["forward"] for x in areas[:-1]]):
     
         fig, ax = plt.subplots()
         plt.plot([0, 1], [0, 0], color="black")
+
+        #print (H, areas)
 
         # plot areas in a single 0-1 plot
         for idx, (h, area_dict) in enumerate(zip(H, areas)):

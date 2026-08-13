@@ -16,7 +16,7 @@ if __name__ == "__main__":
     ap.add_argument("horizon_size", help="Size of forecast horizon", type=int)
     args = ap.parse_args()
 
-    files = glob.glob(os.path.join(args.folder, "%s_%s_%d_*" % (args.dataset, args.model, args.horizon_size)))
+    files = glob.glob(os.path.join(args.folder, "%s_%s_%d_*.npy" % (args.dataset, args.model, args.horizon_size)))
 
     assert len(files) >= 5, "At least 5 runs needed for visualization"
     
@@ -33,12 +33,17 @@ if __name__ == "__main__":
 
     fig, (ax1, ax2) = plt.subplots(nrows=2, sharex=True)
     
+    start = 5
+    heatmap_means = error_means.copy()
+    heatmap_means[:start] = error_means.min()
+
     x = np.arange(1, args.horizon_size + 1, 1)
     extent = [x[0] - (x[1] - x[0]) / 2., x[-1] + (x[1] - x[0]) / 2., 0, 1]
-    ax1.imshow(error_means[np.newaxis, :], cmap="inferno", aspect="auto", extent=extent)
+ 
+    ax1.imshow(heatmap_means[np.newaxis, :], cmap="inferno", aspect="auto", extent=extent)
     ax1.set_yticks([])
     ax1.set_xlim(extent[0], extent[1])
-
+   
     ax2.plot(range(1, args.horizon_size + 1), error_means, label="MSE Per Timestep")
     ax2.fill_between(range(1, args.horizon_size + 1), error_means - error_stds, error_means + error_stds, 
                      color='grey', alpha=0.7)
@@ -46,4 +51,6 @@ if __name__ == "__main__":
     ax2.text(0.6, 0.05, "STD ∈ [%.2e, %.2e]" % (error_stds.min(), error_stds.max()), 
              transform=ax2.transAxes, fontsize=10)
     ax2.legend(fontsize=10)
-    plt.show()
+    
+    plt.savefig(os.path.join(args.folder, "%s_%s_%d_heatmap.pdf" % (args.dataset, args.model, args.horizon_size)),
+                dpi=300, bbox_inches="tight")
