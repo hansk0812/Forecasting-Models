@@ -62,12 +62,14 @@ class Dataset_Yahoo_Finance(Dataset):
 
         df_raw = pd.concat([date_cols] + df_raw, axis=1)
         
-        data_length = len(df_raw) - self.seq_len - self.pred_len + 1
-        train_end = int(self.SPLITS[0] * data_length) + self.seq_len + self.pred_len - 1
-        val_end = int((self.SPLITS[0] + self.SPLITS[1]) * data_length) + self.seq_len + self.pred_len - 1
-        test_end = len(df_raw)
-        border1s = [0, train_end - self.seq_len - self.pred_len + 1, val_end - self.seq_len - self.pred_len + 1]
-        border2s = [train_end, val_end, test_end]
+        trainable = len(df_raw) - self.seq_len - self.pred_len + 1
+        train_end = int(self.SPLITS[0] * trainable)
+        val_end = train_end + int(self.SPLITS[1] * trainable)
+        test_end = trainable
+        border1s = [0, train_end, val_end]
+        border2s = [train_end + self.seq_len + self.pred_len - 1, 
+                    val_end + self.seq_len + self.pred_len - 1, 
+                    test_end + self.seq_len + self.pred_len - 1]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
@@ -84,7 +86,7 @@ class Dataset_Yahoo_Finance(Dataset):
             nf=1
 
         if self.scale:
-            train_data = df_data[border1s[0]:border2s[0]]
+            train_data = df_data.iloc[border1s[0]:border2s[0]]
             self.scaler.fit(train_data.values)
             data = self.scaler.transform(df_data.values)
         else:
@@ -92,6 +94,7 @@ class Dataset_Yahoo_Finance(Dataset):
 
         df_stamp = df_raw[['date']][border1:border2]
         df_stamp['date'] = pd.to_datetime(df_stamp.date, format="%Y-%m-%d")
+        self.freq_diff = df_stamp['date'].iloc[1] - df_stamp['date'].iloc[0]
         if self.timeenc == 0:
             df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
             df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
@@ -109,10 +112,13 @@ class Dataset_Yahoo_Finance(Dataset):
         self.cycle_index = (np.arange(len(data)) % self.cycle)[border1*nf:border2*nf]
         
         print ("Dataset total number of timesteps: %d" % len(data))
-        print ("Dataset length: %d" % len(self))
+        print ("Dataset %d length: %d" % (self.set_type, len(self)))
  
     def get_num_features(self):
         return len(self.STOCKS)
+
+    def frequency(self):
+        return self.freq_diff
 
     def __getitem__(self, index):
         s_begin = index
@@ -130,8 +136,7 @@ class Dataset_Yahoo_Finance(Dataset):
         return seq_x, seq_y, seq_x_mark, seq_y_mark, cycle
 
     def __len__(self):
-        return len(self.data_x) - self.seq_len - self.pred_len + 1
+        return len(self.data_x) - self.pred_len - self.seq_len + 1
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
-
