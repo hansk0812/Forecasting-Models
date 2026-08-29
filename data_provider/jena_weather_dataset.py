@@ -104,6 +104,7 @@ class Dataset_Weather(Dataset):
         self.scaler = StandardScaler()
 
         df_raw = self.folder_to_df(glob.glob(os.path.join(self.root_path, "mpi_roof*.csv")))
+
         dataset_length = len(df_raw) - self.seq_len - self.pred_len + 1
         train_indices = (0, int(self.TRAIN_VAL_TEST[0] * dataset_length))
         if self.set_type == 0:
@@ -164,10 +165,10 @@ class Dataset_Weather(Dataset):
                 data2 = df_data2.values
         
         if not isinstance(indices[0], tuple):
-            df_stamp = df_raw[['Date Time']][indices[0]*nf: indices[1]*nf]
+            df_stamp = df_raw[['Date Time']][indices[0]*nf: (indices[1] + self.seq_len + self.pred_len - 1)*nf]
         else:
-            df_stamp = df_raw[['Date Time']][indices[0][0]*nf: indices[0][1]*nf]
-            df_stamp2 = df_raw2[['Date Time']][indices[1][0]*nf: indices[1][1]*nf]
+            df_stamp = df_raw[['Date Time']][indices[0][0]*nf: (indices[0][1] + self.seq_len + self.pred_len - 1)*nf]
+            df_stamp2 = df_raw2[['Date Time']][indices[1][0]*nf: (indices[1][1] + self.seq_len + self.pred_len - 1)*nf]
 
         if nf > 1:
             df_stamp = df_stamp.loc[df_stamp.index.repeat(nf)]
@@ -184,7 +185,6 @@ class Dataset_Weather(Dataset):
             self.freq = df_stamp["date"].drop_duplicates(keep='first').iloc[1] - df_stamp["date"].iloc[0]
         except Exception:
             self.freq = 0
-            pass
         
         if self.timeenc == 0:
             df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
@@ -212,23 +212,23 @@ class Dataset_Weather(Dataset):
                 data_stamp2 = data_stamp2.transpose(1, 0)
         
         if not isinstance(indices[0], tuple):
-            self.data_x = data[indices[0]*nf:indices[1]*nf]
-            self.data_y = data[indices[0]*nf:indices[1]*nf]
+            self.data_x = data[indices[0]*nf:(indices[1] + self.seq_len + self.pred_len - 1)*nf]
+            self.data_y = data[indices[0]*nf:(indices[1] + self.seq_len + self.pred_len - 1)*nf]
             self.data_stamp = data_stamp
-            self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0]*nf:indices[1]*nf]
+            self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0]*nf:(indices[1] + self.seq_len + self.pred_len - 1)*nf]
         else:
-            self.data_x = data[indices[0][0]*nf:indices[0][1]*nf]
-            self.data_y = data[indices[0][0]*nf:indices[0][1]*nf]
+            self.data_x = data[indices[0][0]*nf:(indices[0][1] + self.seq_len + self.pred_len - 1)*nf]
+            self.data_y = data[indices[0][0]*nf:(indices[0][1] + self.seq_len + self.pred_len - 1)*nf]
             self.data_stamp = data_stamp
-            self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0][0]*nf:indices[0][1]*nf]
+            self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0][0]*nf:(indices[0][1] + self.seq_len + self.pred_len - 1)*nf]
             
-            self.data_x = np.concatenate([self.data_x, data2[indices[1][0]*nf:indices[1][1]*nf]], axis=0)
-            self.data_y = np.concatenate([self.data_y, data2[indices[1][0]*nf:indices[1][1]*nf]], axis=0)
-            self.data_stamp = np.concatenate([self.data_stamp, data_stamp2], axis=0)
-            self.cycle_index = np.concatenate([self.cycle_index, 
-                                (np.arange(len(data2)) % self.cycle)[indices[1][0]*nf:indices[1][1]*nf]], axis=-1)
+            self.second_dataset_index = len(self.data_x) - self.seq_len - self.pred_len + 1
+            self.data_x2 = data2[indices[1][0]*nf:(indices[1][1] + self.seq_len + self.pred_len - 1)*nf]
+            self.data_y2 = data2[indices[1][0]*nf:(indices[1][1] + self.seq_len + self.pred_len - 1)*nf]
+            self.data_stamp2 = data_stamp2
+            self.cycle_index2 = (np.arange(len(data2)) % self.cycle)[indices[1][0]*nf:(indices[1][1] + self.seq_len + self.pred_len - 1)*nf]
         
-        print ("Dataset total number of timesteps: %d" % len(self.data_x))
+        print ("Dataset total number of timesteps: %d" % (len(self.data_x)))
         print ("Dataset length: %d" % len(self))
     
     def get_num_features(self):
@@ -238,22 +238,37 @@ class Dataset_Weather(Dataset):
         return self.freq
 
     def __getitem__(self, index):
+
+        if index >= len(self):
+            raise StopIteration
+
         s_begin = index
         s_end = s_begin + self.seq_len
         r_begin = s_end - self.label_len
         r_end = r_begin + self.label_len + self.pred_len
 
-        seq_x = self.data_x[s_begin:s_end]
-        seq_y = self.data_y[r_begin:r_end]
-        seq_x_mark = self.data_stamp[s_begin:s_end]
-        seq_y_mark = self.data_stamp[r_begin:r_end]
-
+        if index < self.second_dataset_index:
+            seq_x = self.data_x[s_begin:s_end]
+            seq_y = self.data_y[r_begin:r_end]
+            seq_x_mark = self.data_stamp[s_begin:s_end]
+            seq_y_mark = self.data_stamp[r_begin:r_end]
+        else:
+            s_begin, s_end, r_begin, r_end = \
+                    [x - len(self.data_x) + self.seq_len + self.pred_len - 1 for x in [s_begin, s_end, r_begin, r_end]] 
+            seq_x = self.data_x2[s_begin:s_end]
+            seq_y = self.data_y2[r_begin:r_end]
+            seq_x_mark = self.data_stamp2[s_begin:s_end]
+            seq_y_mark = self.data_stamp2[r_begin:r_end]
+            
         cycle_index = self.cycle_index[s_end]
         
         return seq_x, seq_y, seq_x_mark, seq_y_mark, cycle_index
 
     def __len__(self):
-        return len(self.data_x) - self.seq_len - self.pred_len + 1
+        if self.data_path == '1':
+            return len(self.data_x) - self.seq_len - self.pred_len + 1
+        else:
+            return len(self.data_x) + len(self.data_x2) - 2 * (self.seq_len + self.pred_len - 1)
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
