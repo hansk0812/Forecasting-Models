@@ -216,6 +216,8 @@ class Dataset_Weather(Dataset):
             self.data_y = data[indices[0]*nf:(indices[1] + self.seq_len + self.pred_len - 1)*nf]
             self.data_stamp = data_stamp
             self.cycle_index = (np.arange(len(data)) % self.cycle)[indices[0]*nf:(indices[1] + self.seq_len + self.pred_len - 1)*nf]
+
+            self.second_dataset_index = len(self)
         else:
             self.data_x = data[indices[0][0]*nf:(indices[0][1] + self.seq_len + self.pred_len - 1)*nf]
             self.data_y = data[indices[0][0]*nf:(indices[0][1] + self.seq_len + self.pred_len - 1)*nf]
