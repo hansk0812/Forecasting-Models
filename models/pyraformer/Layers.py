@@ -1,4 +1,4 @@
-from torch.functional import align_tensors
+#from torch.functional import align_tensors
 import torch.nn as nn
 
 from torch.nn.modules.linear import Linear
