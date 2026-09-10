@@ -92,9 +92,10 @@ class Dataset_Weather(Dataset):
                 df_raw = pd.read_csv(fname, encoding="cp1250")
                 if self.data_path == '1':
                     common_ascii = "PAR"
-                    diff_encoding_column = [x for x in df_raw.columns if common_ascii in x][0]
-                    var_idx = [idx for idx, v in enumerate(self.vars) if common_ascii in v][0]
-                    self.vars[var_idx] = diff_encoding_column
+                    if any([common_ascii in v for v in self.vars]):
+                        diff_encoding_column = [x for x in df_raw.columns if common_ascii in x][0]
+                        var_idx = [idx for idx, v in enumerate(self.vars) if common_ascii in v][0]
+                        self.vars[var_idx] = diff_encoding_column
             else:
                 df_raw = pd.concat([df_raw, pd.read_csv(fname, encoding="cp1250")], ignore_index=True)
         
