@@ -1,6 +1,8 @@
 import os
 import glob
 
+import sys
+
 # HDF5 too big for IG
 #import h5py
 
@@ -31,10 +33,10 @@ from models import CycleNet
 from models import NLinearLHF
 from models import LHF
 
-from models import AutoformerSansRoll
-from models import NLinearSansNorm
+#from models import AutoformerSansRoll
+#from models import NLinearSansNorm
 
-from models import PyraformerSansMask, PyraformerOppMask, PyraformerEncoderOppMask
+#from models import PyraformerSansMask, PyraformerOppMask, PyraformerEncoderOppMask
 
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
 from utils.metrics import metric
@@ -245,13 +247,13 @@ class Exp_Main(Exp_Basic):
                 'CycleNet': CycleNet,
                 'SpaceTime': SpaceTime,
                 'MultiResolutionDDPM': MultiResolutionDDPM,
-                'AutoformerSansRoll': AutoformerSansRoll,
+                #'AutoformerSansRoll': AutoformerSansRoll,
 
-                'NLinearSansNorm': NLinearSansNorm,
+                #'NLinearSansNorm': NLinearSansNorm,
 
-                'PyraformerSansMask': PyraformerSansMask,
-                'PyraformerOppMask': PyraformerOppMask,
-                'PyraformerEncoderOppMask': PyraformerEncoderOppMask,            
+                #'PyraformerSansMask': PyraformerSansMask,
+                #'PyraformerOppMask': PyraformerOppMask,
+                #'PyraformerEncoderOppMask': PyraformerEncoderOppMask,            
             }
             try:
                 model_dict['xLSTM_TS'] = xLSTM_TS
@@ -459,7 +461,7 @@ class Exp_Main(Exp_Basic):
 
             gradnorms_file = os.path.join(self.args.gradnorms_dir, "%s_%s_%d_%s.pth" % (
                                                       self.args.data, self.args.model, 
-                                                      self.args.pred_len, self.args.inspect_backward_pass)
+                                                      self.args.pred_len, self.args.inspect_backward_pass))
             if os.path.exists(gradnorms_file):
                 try:
                     load_dict = torch.load(gradnorms_file)
@@ -467,7 +469,7 @@ class Exp_Main(Exp_Basic):
                     batch_start = load_dict["batch"] + 1
 
                     if batch_start == len(train_loader):
-                        exit()
+                        sys.exit()
                 except Exception:
                     if not self.args.backward_pass_multivariate:
                         grad_norms_per_timestep = {"forward": [torch.zeros((len(train_loader), len(layer_names))) \
@@ -592,7 +594,7 @@ class Exp_Main(Exp_Basic):
                     print ("allocated per data pt:", torch.cuda.memory_allocated(self.device)/(1024.*1024*1024*self.args.batch_size))
                     print ("reserved per data pt:", torch.cuda.memory_reserved(self.device)/(1024.*1024*1024*self.args.batch_size))
                     print ("Time per epoch: %f hours" % ((time.time()-epoch_time)*len(train_loader)/(6.*60*60)))
-                    exit()               
+                    sys.exit()               
 
                 if (i + 1) % 100 == 0:
                     # print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
@@ -615,7 +617,7 @@ class Exp_Main(Exp_Basic):
                             #print ([len(x) for x in autocorrs])
                             print ("Autocorrelation for %s pred:" % self.args.model, np.array(autocorrs)[:,:,1:2,:].mean(axis=(0,1,2)))
                             print ("Autocorrelation for %s gt:" % self.args.model, np.array(autocorrs)[:,:,0:1,:].mean(axis=(0,1,2)))
-                            exit()
+                            sys.exit()
                         
                         for b in range(batch_y.shape[0]):
                             feature_autocorrs = []
@@ -703,7 +705,7 @@ class Exp_Main(Exp_Basic):
                                                                         zip(layer_names, grad_norms_per_timestep["forward"][idx].mean(axis=0)[:, v_idx])])
                                                     f.write("Grad norm for H: %d->%d: %s\n" % (0, idx, norms_str))
                                         
-                            exit()
+                            sys.exit()
 
                         if self.args.model in ["Informer", "Autoformer", "FEDformer", "Pyraformer", "Triformer"]:
                             input_grad_norms = [torch.zeros(input_gradnorms_shape),
@@ -901,12 +903,12 @@ class Exp_Main(Exp_Basic):
             self.args.features = "SM"
         
         if seq_len > 720 or pred_len > 720:
-             feature_type = setting.split("ft")[-1].split('_')[0]
-             if 'M' in feature_type:
+            feature_type = setting.split("ft")[-1].split('_')[0]
+            if 'M' in feature_type:
                 shape = (self.args.pred_len, num_features)
             else:
                 shape = (self.args.pred_len, 1)
-             print ('.'*50, "\n\n\t\tEvaluating over %d features\n\n" % num_features, '.'*50)
+            print ('.'*50, "\n\n\t\tEvaluating over %d features\n\n" % num_features, '.'*50)
             mse_running_avg = RunningAvgMetrics(shape, "mse")
             mae_running_avg = RunningAvgMetrics(shape, "mae")
             cpu_eff = True
@@ -915,7 +917,7 @@ class Exp_Main(Exp_Basic):
 
         epoch_time = time.time()
        
-       if self.args.inspect_backward_pass is None:
+        if self.args.inspect_backward_pass is None:
             self.model.eval()
         else:
             self.model.train()
@@ -1080,7 +1082,7 @@ class Exp_Main(Exp_Basic):
                 #    plt.plot(np.arange(self.args.seq_len), grad_cams_heatmap[idx], color=colors[idx])
                 #    plt.savefig("sample.png"); 
                 #plt.savefig("sample.png")
-                #exit()
+                #sys.exit()
 
 #                if epoch > 0:
 #                    for idx in range(self.args.pred_len+1):
@@ -1090,7 +1092,7 @@ class Exp_Main(Exp_Basic):
 #                        else:
 #                            print ("Grad norm for H: %d->%d: %.5f" % (1, idx,
 #                                                                        grad_norms_per_timestep["forward"][idx].mean()))
-#                    exit()
+#                    sys.exit()
                 
                 if "Weather_Station" in self.args.data:
                     weather_metrics.update(pred, true, percentile)
@@ -1120,12 +1122,12 @@ class Exp_Main(Exp_Basic):
                     print ("allocated per data pt:", torch.cuda.memory_allocated(self.device)/(1024.*1024*1024*self.args.batch_size))
                     print ("reserved per data pt:", torch.cuda.memory_reserved(self.device)/(1024.*1024*1024*self.args.batch_size))
                     print ("Time per epoch: %f seconds" % ((time.time()-epoch_time)*len(test_loader)/(6.)))
-                    exit()               
+                    sys.exit()               
                         
             if not self.args.calculate_acf is None:
                 print ("Autocorrelation for %s pred:" % self.args.model, np.array(autocorrs)[:,:,0:1,:].mean(axis=(0,1,2)))
                 print ("Autocorrelation for %s gt:" % self.args.model, np.array(autocorrs)[:,:,1:2,:].mean(axis=(0,1,2)))
-                exit()
+                sys.exit()
  
         if not cpu_eff:
             if not metric_avg and not "Weather_Station" in self.args.data:
