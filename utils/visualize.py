@@ -221,7 +221,7 @@ if __name__ == "__main__":
 
     files = [glob.glob(os.path.join(args.folder, "*%s*gradnorms.txt" % m.split('=')[0])) for m in args.models]
     files = list(chain.from_iterable(files))
-    H = set([int(x.split('_')[1]) for x in files])
+    H = set([int(x.split('_')[-3]) for x in files])
     H = sorted(list(H))
 
     plots = OrderedDict()
