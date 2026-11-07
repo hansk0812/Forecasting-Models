@@ -1,6 +1,6 @@
 ### Code patterns similar to Informer et al.
 
-### This repository supports the following models for ETTm2:
+### This repository supports the following models:
 
 ###### NBEATS: https://github.com/Nixtla/neuralforecast
 ###### NHITS: https://github.com/Nixtla/neuralforecast
