@@ -110,7 +110,7 @@ def find_poly_area(coords, h):
 def plot_HAM(values, model, colour_idx, plot_colors_per_model, loss_based_weights=None, h=None, cutoff_type=None, interp_pts=[]):
 
     global text
-
+    
     p, = plt.plot(np.arange(0, len(values)), values, label=model, 
                     color=plot_colors_per_model[colour_idx], linewidth=1) #0.5) 
     plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors_per_model[colour_idx], linestyle='--', linewidth=0.7, alpha=0.5) #0.5) 
@@ -118,7 +118,7 @@ def plot_HAM(values, model, colour_idx, plot_colors_per_model, loss_based_weight
     if len(interp_pts) > 0:
         y_vals = [values[int(x)] for x in interp_pts]
         plt.scatter(interp_pts, y_vals, color=plot_colors_per_model[colour_idx], s=5, alpha=0.35)
-    
+
     if not loss_based_weights is None:
         if cutoff_type == "forward":
             text = "H=%s: %.5f\n" % ("0  " if h < 100 else "0    ", loss_based_weights[h][cutoff_type][0])
@@ -150,6 +150,14 @@ def create_rgb_colormap(color, factor=0.5, ncolors=10):
 
     return list(reversed(colors))
 
+def reverse_index(indices):
+    ret = {}
+    for idx, v in enumerate(indices):
+        ret[v] = idx
+    ret = dict(sorted(ret.items()))
+
+    return list(ret.values())
+
 if __name__ == "__main__":
     
     ap = argparse.ArgumentParser()
@@ -159,6 +167,7 @@ if __name__ == "__main__":
     ap.add_argument("--start_color_idx", default=[0], nargs='+', help="Color idx for single color per model", type=int)
     ap.add_argument("--name", help="Filename when specific layers are used in gradnorms", default=None)
     ap.add_argument("--interpolated", help="Flag to interpolate smaller gradnorms to largest gradnorm (1 per model)", action="store_true")
+    ap.add_argument("--plots_dir", default="plots_", help="Optional directory to store plots")
     args = ap.parse_args()
 
     assert any([x in args.mode for x in ["autocorr", "gradnorms", "batchsizes"]])
@@ -187,8 +196,11 @@ if __name__ == "__main__":
                 mnames = [args.name]
         else:
             mnames = args.models
-        
+
+        names_dict = {m: n for m, n in zip(args.models, mnames)}
         args.interpolated = {n: 0 for n in mnames}
+    else:
+        mnames = None
     
     if not args.name is None and args.name[0] == '(':
         args.name = [x.strip() for x in args.name[1:-1].split(',')]
@@ -221,9 +233,10 @@ if __name__ == "__main__":
 
     files = [glob.glob(os.path.join(args.folder, "*%s*gradnorms.txt" % m.split('=')[0])) for m in args.models]
     files = list(chain.from_iterable(files))
+
     H = set([int(x.split('_')[-3]) for x in files])
     H = sorted(list(H))
-
+    
     plots = OrderedDict()
     
     # select a few colors
@@ -247,7 +260,7 @@ if __name__ == "__main__":
     #c1 = create_rgb_colormap("#8fae22", factor=0.9, ncolors=2)
     #c2 = create_rgb_colormap("#fdb147", factor=0.9, ncolors=2)
     #plot_colors_per_model = np.concatenate((c1, c2))[args.start_color_idx]
-
+    
     """
     for h in H:
 
@@ -294,6 +307,8 @@ if __name__ == "__main__":
     # midpoints
     midpts, midpts_plot = {}, {}
     areas = []
+
+    model_name_indices = {} # For names per model when = in args.mode
     for h_idx, h in enumerate(H):
         
         if "batchsizes" in args.mode:
@@ -374,7 +389,7 @@ if __name__ == "__main__":
             bbox_pts[1][1] -= bbox_pts[1][1]*0.105
             bbox = Bbox(bbox_pts)
             
-            plt.savefig("plots_/gradnorms_%s_%d_batchsizes.pdf" % ('_'.join(args.models), h), dpi=300, bbox_inches=bbox)
+            plt.savefig("%s/gradnorms_%s_%d_batchsizes.pdf" % (args.plots_dir, '_'.join(args.models), h), dpi=300, bbox_inches=bbox)
             
             plt.clf()
 
@@ -471,11 +486,29 @@ if __name__ == "__main__":
                                 cell.set(width=0.16)
                     """
 
-                    if not model in plots:
-                        for mdl in [m for m in args.models if model in m]:
-                            if not '=' in mdl:
-                                plots[model] = []
-                                midpts[model] = []
+                    if args.name is None:
+                        if model in plots:
+                            for mdl in [m for m in args.models if model in m]:
+                                if not '=' in mdl:
+                                    plots[model] = []
+                                    midpts[model] = []
+                        else:
+                            plots[model] = []
+                            midpts[model] = []
+                    else:
+                        if len(model_name_indices) == 0:
+                            for idx, name in enumerate(args.name):
+
+                                # layer sets + multiple models    
+                                if '(' in args.mode:
+                                    n = name.replace(args.models[idx], "")
+                                    if not n in plots:
+                                        plots[n] = []
+                                        midpts[n] = []
+                                        model_name_indices[name] = idx
+                                else:
+                                    plots[name] = []
+                                    midpts[name] = []
 
                     with open(fname, 'r') as f:
                         values, min_idx = [], 1e7
@@ -495,7 +528,7 @@ if __name__ == "__main__":
                                     min_idx = jdx
                                     keys = [x.split('=')[0] for x in gradnorm_str.split(' ')]
                                 values.append([float(x.split('=')[1].strip()) for x in gradnorm_str.split(' ')])
-                    
+
                     # Remove unupdated weights from mean: Useful for MR-DDPM
                     # Leads to syntax error by length differences if some updates are 0 by design - almost impossible case
                     if isinstance(values[0], list):
@@ -508,7 +541,7 @@ if __name__ == "__main__":
                             values = [[x for x in row if x != 0] if idx != len(values) - 1 else row for idx, row in enumerate(values)]
                             values[-1] = [0 for _ in range(len(values[0]))]
                         print ("Removed %d %s layers with zero activity throughout" % (num_weights - len(values[0]), model))
-
+                    
                     plot_interp_pts = [] # Plot interpolation points on the HAM plot for clarity
 
                     # values: (h,l) horizon x num_layers
@@ -516,6 +549,7 @@ if __name__ == "__main__":
                     # ALSO TRANSPOSES VALUES
                     if len(values) != h + 1:
                         if isinstance(values[0], float):
+
                             assert "INTERPOLATION_STEP" in os.environ
                             s = int(os.environ["INTERPOLATION_STEP"])
                             if h % s == 0:
@@ -529,6 +563,8 @@ if __name__ == "__main__":
                             else:
                                 plot_interp_pts[0] = x_range
 
+                            #x_range = np.arange(0, h+1, (h - h % 100)/(len(values)-2)).tolist() + [h]
+                            
                             # unpredictable cubic interpolation when sequence is decreasing; reverse
                             if cutoff_type != "forward":
                                 values = list(reversed(values))
@@ -543,8 +579,6 @@ if __name__ == "__main__":
                             # DECISION: Interpolating one feature at a time gives very different plots (#TODO: Future Work)
                             if not '=' in args.mode:
                                 values = values.mean(axis=1)[:,np.newaxis]
-                            else:
-                                values = values
 
                             assert "INTERPOLATION_STEP" in os.environ
                             s = int(os.environ["INTERPOLATION_STEP"])
@@ -560,7 +594,8 @@ if __name__ == "__main__":
                             else:
                                 if jdx == 0:
                                     plot_interp_pts[0] = x_range
-                           
+
+
                             values_interpolated = []
                             for jdx in range(len(values[0])):
                                 # unpredictable cubic interpolation when sequence is decreasing; reverse
@@ -568,7 +603,9 @@ if __name__ == "__main__":
                                     values_s = values[:,jdx][::-1]
                                 else:
                                     values_s = values[:,jdx]
-                                
+
+                                plot_interp_pts.append(x_range)
+
                                 values_spline = make_interp_spline(x_range, values_s)
                                 X = np.linspace(0, h, h+1)
                                 if cutoff_type != "forward":
@@ -609,6 +646,9 @@ if __name__ == "__main__":
                                 if cutoff_type == "forward":
                                     print (model, "max value:", max(all_values), "interpolation factor:", 1./max(all_values))
                                 
+                                if not mnames is None:
+                                    model = names_dict[model]
+                                    
                                 if isinstance(args.interpolated, dict):
                                     if args.interpolated[model] == 0:
                                         if model == "SpaceTime":
@@ -617,20 +657,21 @@ if __name__ == "__main__":
                                         else:
                                             args.interpolated[model] = 1./max(all_values)
                                             model_legend = model + " (%.4f)" % max(all_values)
+
                                     else:
                                         fc = 1./args.interpolated[model]
                                         if model == "SpaceTime":
-                                            model_legend = model + " (%.4f ; +%.4f)" % (max(all_values - min(all_values)), min(all_values))
+                                            model_legend = model + " (range %.4f ; min +%.4f)" % (max(all_values - min(all_values)), min(all_values))
                                         else:
                                             model_legend = model + " (%.4f)" % fc
                                     
                                     if model == "SpaceTime":
                                         all_values -= min(all_values)
-                                    all_values *= args.interpolated[model] #/= max(all_values)
 
+                                    all_values *= args.interpolated[model] #/= max(all_values)
                                 else:
                                     model_legend = model
-
+                                
                                 p = plot_HAM(all_values, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts[0])
                                 legend_list[model_legend] = [p]
                             
@@ -654,11 +695,11 @@ if __name__ == "__main__":
                                     continue
                                 
                                 if cutoff_type == "forward":
-                                    print (args.name[models_variable_name[model]["model_idx"]+jdx], 
-                                            "max value:", max(value), "interpolation factor:", 1./max(value))
+                                    print (args.name[models_variable_name[model]["model_idx"]+jdx], "max value:", max(value), "interpolation factor:", 1./max(value))
                                 
                                 if isinstance(args.interpolated, dict):
                                     if args.interpolated[args.name[models_variable_name[model]["model_idx"]+jdx]] == 0:
+
                                         if model == "SpaceTime":
                                             args.interpolated[
                                                 args.name[models_variable_name[model]["model_idx"]+jdx]] = \
@@ -673,8 +714,10 @@ if __name__ == "__main__":
                                             model_legend = args.name[
                                                             models_variable_name[model]["model_idx"]+jdx] + \
                                                                  " (%.4f)" % max(value)
+
                                     else:
                                         fc = 1./args.interpolated[args.name[models_variable_name[model]["model_idx"]+jdx]]
+
                                         if model == "SpaceTime":
                                             model_legend = args.name[models_variable_name[model]["model_idx"]+jdx] + \
                                                             " (%.4f ; +%.4f)" % (fc, min(value))
@@ -699,6 +742,8 @@ if __name__ == "__main__":
                             if cutoff_type == "forward":
                                 print (model, "max value:", max(values), "interpolation factor:", 1./max(values))
                             
+                            if not mnames is None:
+                                model = names_dict[model]
                             if isinstance(args.interpolated, dict):
                                 if args.interpolated[model] == 0:
                                     if model == "SpaceTime":
@@ -707,6 +752,7 @@ if __name__ == "__main__":
                                     else:
                                         args.interpolated[model] = 1./max(values)
                                         model_legend = model + " (%.4f)" % max(values)
+
                                 else:
                                     fc = 1./args.interpolated[model] 
                                     if model == "SpaceTime":
@@ -723,6 +769,7 @@ if __name__ == "__main__":
 
                             if model != "SpaceTime":
                                 p = plot_HAM(values, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts[0])
+
                             else:
                                 p = plot_HAM(values, model_legend, idx, plot_colors_per_model, loss_based_weights, h, cutoff_type, 
                                              interp_pts=plot_interp_pts[0])
@@ -759,12 +806,11 @@ if __name__ == "__main__":
                                 p = plot_HAM(values, model_legend, idx, plot_colors_per_model, loss_based_weights, h, cutoff_type, 
                                              interp_pts=plot_interp_pts[0])
                     
+                    if not mnames is None:
+                        model = next(k for k, v in names_dict.items() if v == model)
                     if len(values.shape) > 1:
-                        model_names_multiple = args.models[
-                                                models_variable_name[model]["model_idx"]: \
-                                                models_variable_name[model]["model_idx"] + len(values)]
-                        model_names_multiple = [x if not '=' in x else args.name[models_variable_name[model]["model_idx"]+jdx] \
-                                                    for jdx, x in enumerate(model_names_multiple)]
+                        model_names_multiple = args.models[models_variable_name[model]["model_idx"]: models_variable_name[model]["model_idx"]+len(values)]
+                        model_names_multiple = [x if not '=' in x else args.name[models_variable_name[model]["model_idx"]+jdx] for jdx, x in enumerate(model_names_multiple)]
                         for n, v in zip(model_names_multiple, values):
                             if n in plot_diffs:
                                 plot_diffs[n][cutoff_type] = v
@@ -784,7 +830,6 @@ if __name__ == "__main__":
                             for h_ in range(1, h+1):
                                 #plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors[idx], linestyle='--')
                                 #plt.plot(list(range(h_)), values[:h_], color=plot_colors[idx], linestyle='--')
-                                
                                 area, intersect_pts = find_poly_area(pts, h_)
                                 poly_areas[cutoff_type][n].append(area)
                                 
@@ -799,7 +844,6 @@ if __name__ == "__main__":
                         for h_ in range(1, h+1):
                             #plt.plot([0, len(values)-1], [values[0], values[-1]], color=plot_colors[idx], linestyle='--')
                             #plt.plot(list(range(h_)), values[:h_], color=plot_colors[idx], linestyle='--')
-                           
                             area, intersect_pts = find_poly_area(pts, h_)
                             poly_areas[cutoff_type][model].append(area)
                             
@@ -816,17 +860,49 @@ if __name__ == "__main__":
                                 midpts[n].append(np.array(v))
                             else:
                                 midpts[n] = np.argwhere(np.diff(np.sign(np.array(v)-midpts[n][0])))
-                                
+                        
                         plots.update(legend_list)
                     else:
-                        if len(midpts[model]) == 0:
-                            midpts[model].append(np.array(values))
+                        if args.name is None:
+                            if len(midpts[model]) == 0:
+                                midpts[model].append(np.array(values))
+                            else:
+                                midpts[model] = np.argwhere(np.diff(np.sign(np.array(values)-midpts[model][0])))
                         else:
-                            midpts[model] = np.argwhere(np.diff(np.sign(np.array(values)-midpts[model][0])))
+                            if '(' in args.mode:
+                                name_idx = [k for k in model_name_indices.keys() if model in k][0]
+                                N = args.name[model_name_indices[name_idx]].replace(args.models[model_name_indices[name_idx]], "")
+                                if len(midpts[N]) == 0:
+                                    midpts[N].append(np.array(values))
+                                else:
+                                    midpts[N] = np.argwhere(np.diff(np.sign(np.array(values)-midpts[N][0])))
+                            else:
+                                if len(midpts[args.name[0]]) == 0:
+                                    midpts[args.name[0]].append(np.array(values))
+                                else:
+                                    midpts[args.name[0]] = np.argwhere(np.diff(np.sign(np.array(values)-midpts[args.name[0]][0])))
                         
+                        # lazy
                         if '(' in model_legend and model_legend.split(" (")[0] in plots:
-                            plots[model_legend] = plots.pop(model_legend.split(" (")[0])
-                        plots[model_legend].append(p)
+                            if '(' in args.mode:
+                                plots[model_legend.split(" (")[0]].append(p)
+                            else:
+                                plots[model_legend] = plots.pop(model_legend.split(" (")[0])
+                        else:
+                            # Single set of layers, multiple models
+                            if not args.name is None and '=' in args.mode:
+                                args_idx = model_name_indices[[k for k in model_name_indices.keys() if model_legend.split(" (")[0] in k][0]]
+                                key = args.name[args_idx]
+                                if '(' in model_legend:
+                                    model_name = args.models[args_idx]
+                                    plots = {k if not k in key else model_legend.replace(model_name, ""): plots[k] for k in plots.keys()}
+                                    plots[model_legend.replace(model_name, "")].append(p)
+                                else:
+                                    plots[key.replace(model_legend, "")].append(p)
+                                
+                            else:
+                                key = model_legend
+                                plots[key].append(p)
                 
                 else:
 
@@ -867,13 +943,13 @@ if __name__ == "__main__":
                     models_name = '_'.join(args.name)
                 else:
                     models_name = '_'.join(sorted(args.models))
-                plt.savefig("plots_/autocorrs_%d_%s.pdf" % (h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
+                plt.savefig("%s/autocorrs_%d_%s.pdf" % (args.plots_dir, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
                 #plt.show()
                 plt.clf()
 
             if "gradnorms" in args.mode:
                 plt.legend([tuple(plots[model]) for model in plots], list(plots.keys()),
-                        handler_map={tuple: HandlerTuple(ndivide=None)}, prop={"size": 10}, loc="best") #6})#, loc="top")
+                        handler_map={tuple: HandlerTuple(ndivide=None)}, prop={"size": 10}, loc='center left', bbox_to_anchor=(1, 0.5), framealpha=0.25) #6})#, loc="top")
         
         if "gradnorms" in args.mode:
             ax_top = ax.twiny()
@@ -910,7 +986,7 @@ if __name__ == "__main__":
                 for index in range(min_str_length):
                     if any([args.name[jdx-1][index] != args.name[jdx][index] for jdx in range(1, len(args.name))]):
                         break
-                common_name_str = args.name[0][:index]
+                common_name_str = args.name[0][:index+1]
             
             ylabel = "Gradient Norm Average" if args.name is None else "%s Gradient Norm Average" % common_name_str
             if isinstance(args.interpolated, dict):
@@ -930,8 +1006,9 @@ if __name__ == "__main__":
                 models_name = '_'.join(args.name)
             else:
                 models_name = '_'.join(sorted(args.models))
-            print ("saving to ", "plots_/%s_%d_%s.pdf" % (gradnorms_str, h, "all_models" if args.models is None else models_name))
-            plt.savefig("plots_/%s_%d_%s.pdf" % (gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
+
+            plt.savefig("%s/%s_%d_%s.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
+            print ("saving to ", "%s/%s_%d_%s.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name))
             
             #plt.show(); exit()
             
@@ -958,7 +1035,11 @@ if __name__ == "__main__":
                 plt.plot([midpts_diff[model_name], h], [0, 1], linestyle="--", color=plot_colors_per_model[idx], alpha=0.35)
                 plt.plot([0, midpts_diff[model_name]], [-1, 0], linestyle="--", color=plot_colors_per_model[idx], alpha=0.35)
             
-            plt.legend(prop={"size": 10}, loc="best")
+            handles, labels = plt.gca().get_legend_handles_labels()
+            plt.legend([handles[idx] for idx in reverse_index([len(args.start_color_idx)] + args.start_color_idx)], 
+                       [labels[idx] for idx in reverse_index([len(args.start_color_idx)] + args.start_color_idx)], 
+                       prop={"size": 10}, loc="best", framealpha=0.25)
+
             #plt.title("Difference between forward and backward mode gradient norm averages")
             plt.xlabel("Timestep h for subseries", fontsize=10)
             ylabel = "Difference at h [g(0→h) - g(h→%d)]" % h if args.name is None else "%s Difference at h [g(0→h) - g(h→%d)]" % (common_name_str, h)
@@ -981,7 +1062,7 @@ if __name__ == "__main__":
                 models_name = '_'.join(args.name)
             else:
                 models_name = '_'.join(sorted(args.models))
-            plt.savefig("plots_/%s_%d_%s_diffs.pdf" % (gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
+            plt.savefig("%s/%s_%d_%s_diffs.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
             plt.clf()
             
             """
@@ -1097,7 +1178,7 @@ if __name__ == "__main__":
                 models_name = '_'.join(args.name)
             else:
                 models_name = '_'.join(sorted(args.models))
-            plt.savefig("plots_/%s_%d_%s_areas.pdf" % (gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
+            plt.savefig("%s/%s_%d_%s_areas.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
             #plt.show()
             plt.clf()
 
@@ -1154,16 +1235,14 @@ if __name__ == "__main__":
             models_name = '_'.join(sorted(args.models))
 
         if args.interpolated is None:
-            plt.savefig("plots_/%s_%d_%s_midpts.pdf" % (gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
+            plt.savefig("%s/%s_%d_%s_midpts.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
         #plt.show()
 
     # Plot interpolated area plot for H=720 model only!
-    if not any([x["forward"] for x in areas[:-1]]):
+    if not areas[0]["forward"] and not areas[1]["forward"] and not areas[2]["forward"]:
     
         fig, ax = plt.subplots()
         plt.plot([0, 1], [0, 0], color="black")
-
-        #print (H, areas)
 
         # plot areas in a single 0-1 plot
         for idx, (h, area_dict) in enumerate(zip(H, areas)):
@@ -1202,7 +1281,7 @@ if __name__ == "__main__":
         plt.title("Interpolated area plot over %s models" % ", ".join(args.models), fontsize=10)
         plt.xlabel("Fraction of Horizon", fontsize=10)
         plt.ylabel("Fraction of gradient norm average", fontsize=10)
-        plt.savefig("plots_scores/gradnorms_%s_areas.pdf" % '_'.join(args.models), dpi=300, bbox_inches="tight")
+        plt.savefig("%s/gradnorms_%s_areas.pdf" % (args.plots_dir, '_'.join(args.models)), dpi=300, bbox_inches="tight")
         
         exit()
 
