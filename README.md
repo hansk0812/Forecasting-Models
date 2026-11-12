@@ -2,7 +2,7 @@
 
 ### To clone the repository without the Nifty dataset, use:
 ```
-GIT_LFS_SKIP_SMUDGE=1 git clone https://www.github.com/hansk0812/Forecasting-Models.git
+git clone https://www.github.com/hansk0812/Forecasting-Models.git
 git checkout lhf
 ```
 
@@ -14,13 +14,9 @@ Weather-5k: https://github.com/taohan10200/WEATHER-5K
 
 Jena Weather: https://www.bgc-jena.mpg.de/wetter/weather_data.html
 
-Yahoo S&P 500 Stocks: https://github.com/ranaroussi/yfinance
-
 CA PEMS Traffic Occupancy: https://github.com/guoshnBJTU/ASTGNN 
 
 NASA POWER (Prediction Of Worldwide Energy Resources) Delhi (28°N, 77°E) AgroClimatology (AG): https://power.larc.nasa.gov/api/pages/#/Data%20Requests/daily_single_point_data_request_api_temporal_daily_point_get 
-
-NIFTY Stocks Dataset: In this repository
 
 ### This repository supports the following models:
 
