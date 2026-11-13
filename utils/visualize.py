@@ -24,6 +24,11 @@ from scipy.interpolate import make_interp_spline
 
 import traceback
 
+from .line_animation import line_delta_animation
+
+# global to collect HAM plots for animation
+ANIMATION_LIST = []
+
 # https://www.github.com/hanskrupakar/COCO-Style-Dataset-Generator-GUI 
 # (Trapezoid formula based shoelace (Gauss') formula)
 def find_poly_area(coords, h):
@@ -107,7 +112,13 @@ def find_poly_area(coords, h):
     
     return return_area, [p[-1] for p in polys]
 
-def plot_HAM(values, model, colour_idx, plot_colors_per_model, loss_based_weights=None, h=None, cutoff_type=None, interp_pts=[]):
+def plot_HAM(values, model, colour_idx, plot_colors_per_model, loss_based_weights=None, h=None, cutoff_type=None, interp_pts=[],
+             multimodel_animation=False):
+
+    if multimodel_animation:
+        global ANIMATION_LIST
+        ANIMATION_LIST.append([values, model, colour_idx])
+        return None
 
     global text
     
@@ -158,6 +169,29 @@ def reverse_index(indices):
 
     return list(ret.values())
 
+def multimodel_animation(xy, labels, colour_indices, plot_colours, alphabetical_indices, fname_prefix):
+    
+    assert len(xy) > 1 and len(xy) % 2 == 0, "Animation needs more than one line and both modes"
+
+    N = len(xy) // 2
+    Xs = np.arange(0, len(xy[0]))
+    xy = np.array(xy)
+    Ys = np.array([[x, y] for x, y in zip(xy[:N, :], xy[N:, :])])
+    
+    colors = [[plot_colours[c], plot_colours[c]] for c in colour_indices] #[[plot_colours[idx], plot_colours[idx]] for idx in colour_indices][:N]
+    colors = [colors[idx] for idx in reverse_index(alphabetical_indices)]
+    labels = [labels[idx] for idx in reverse_index(alphabetical_indices)]
+    labels = [l.replace(m, "") for l, m in zip(labels, args.models)]
+    Ys = np.array([Ys[idx] for idx in reverse_index(alphabetical_indices)])
+
+    model_name = ''.join([x for x in args.name[0] if x.isalpha()])
+
+    line_delta_animation(Xs, Ys, colors, labels, "Gradient norm deltas over %s training data by subseries" % model_name, 
+                            "Timesteps in Forecast Horizon", "Interpolated Gradient Norm Average",
+                            frames_morph=200, frames_hold=50, fname=fname_prefix + ".gif")
+
+
+
 if __name__ == "__main__":
     
     ap = argparse.ArgumentParser()
@@ -168,7 +202,11 @@ if __name__ == "__main__":
     ap.add_argument("--name", help="Filename when specific layers are used in gradnorms", default=None)
     ap.add_argument("--interpolated", help="Flag to interpolate smaller gradnorms to largest gradnorm (1 per model)", action="store_true")
     ap.add_argument("--plots_dir", default="plots_", help="Optional directory to store plots")
+    ap.add_argument("--multimodel_animation", help="Flag to animate across HAM plots by models", action="store_true")
+
     args = ap.parse_args()
+
+    assert args.multimodel_animation and not args.name is None or not args.multimodel_animation
 
     assert any([x in args.mode for x in ["autocorr", "gradnorms", "batchsizes"]])
     assert "gradnorms" in args.mode or "autocorr" in args.mode
@@ -672,7 +710,9 @@ if __name__ == "__main__":
                                 else:
                                     model_legend = model
                                 
-                                p = plot_HAM(all_values, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts[0])
+                                p = plot_HAM(all_values, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts[0], 
+                                                multimodel_animation=args.multimodel_animation)
+
                                 legend_list[model_legend] = [p]
                             
                                 model_index = models_variable_name[model]["values"].index(model)
@@ -731,7 +771,9 @@ if __name__ == "__main__":
                                 else:
                                     model_legend = args.name[models_variable_name[model]["model_idx"]+jdx]
 
-                                p = plot_HAM(value, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts[0][jdx])
+                                p = plot_HAM(value, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts[0][jdx],
+                                                multimodel_animation=args.multimodel_animation)
+
                                 if model_legend in legend_list:
                                     legend_list[model_legend].append(p)
                                 else:
@@ -768,11 +810,14 @@ if __name__ == "__main__":
                                 model_legend = model
 
                             if model != "SpaceTime":
-                                p = plot_HAM(values, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts[0])
+                                p = plot_HAM(values, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts[0], 
+                                                multimodel_animation=args.multimodel_animation)
+
 
                             else:
                                 p = plot_HAM(values, model_legend, idx, plot_colors_per_model, loss_based_weights, h, cutoff_type, 
-                                             interp_pts=plot_interp_pts[0])
+                                             interp_pts=plot_interp_pts[0], multimodel_animation=args.multimodel_animation)
+
 
                     else:
                             if cutoff_type == "forward":
@@ -801,10 +846,13 @@ if __name__ == "__main__":
 
                             #values = np.array(values).mean(axis=0)
                             if model != "SpaceTime":
-                                p = plot_HAM(values, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts[0])
+                                p = plot_HAM(values, model_legend, idx, plot_colors_per_model, interp_pts=plot_interp_pts[0], 
+                                                multimodel_animation=args.multimodel_animation)
+
                             else:
                                 p = plot_HAM(values, model_legend, idx, plot_colors_per_model, loss_based_weights, h, cutoff_type, 
-                                             interp_pts=plot_interp_pts[0])
+                                             interp_pts=plot_interp_pts[0], multimodel_animation=args.multimodel_animation)
+
                     
                     if not mnames is None:
                         model = next(k for k, v in names_dict.items() if v == model)
@@ -1007,8 +1055,9 @@ if __name__ == "__main__":
             else:
                 models_name = '_'.join(sorted(args.models))
 
-            plt.savefig("%s/%s_%d_%s.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
-            print ("saving to ", "%s/%s_%d_%s.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name))
+            if not args.multimodel_animation:
+                plt.savefig("%s/%s_%d_%s.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
+                print ("saving to ", "%s/%s_%d_%s.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name))
             
             #plt.show(); exit()
             
@@ -1062,7 +1111,9 @@ if __name__ == "__main__":
                 models_name = '_'.join(args.name)
             else:
                 models_name = '_'.join(sorted(args.models))
-            plt.savefig("%s/%s_%d_%s_diffs.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
+
+            if not args.multimodel_animation:
+                plt.savefig("%s/%s_%d_%s_diffs.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
             plt.clf()
             
             """
@@ -1178,14 +1229,35 @@ if __name__ == "__main__":
                 models_name = '_'.join(args.name)
             else:
                 models_name = '_'.join(sorted(args.models))
-            plt.savefig("%s/%s_%d_%s_areas.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
+
+            if not args.multimodel_animation:
+                plt.savefig("%s/%s_%d_%s_areas.pdf" % (args.plots_dir, gradnorms_str, h, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
             #plt.show()
             plt.clf()
 
             areas.append(poly_areas)
         #areas.append(poly_areas)
 
-    if not "gradnorms" in args.mode:
+    # Multi-model animation
+    if args.multimodel_animation:
+
+        if '(' in args.mode and len(args.models) > 0:
+            names = [x.replace(m, "") for x, m in zip(args.name, args.models)]
+            names = '_'.join(names)
+        else:
+            if not args.name is None:
+                names = args.name[1:-1].replace(',', '_')
+            else:
+                names = '_'.join(args.models)
+
+        xy_vals = [x[0] for x in ANIMATION_LIST]
+        labels = [x[1] for x in ANIMATION_LIST]
+        colour_indices = [x[2] for x in ANIMATION_LIST]
+        multimodel_animation(xy_vals, labels, colour_indices, plot_colors_per_model, args.start_color_idx, 
+                                "%s/%s_%d_%s" % (args.plots_dir, gradnorms_str, h, names))
+
+
+    if not "gradnorms" in args.mode or args.multimodel_animation:
         exit()
     
     plt.clf()
@@ -1281,6 +1353,7 @@ if __name__ == "__main__":
         plt.title("Interpolated area plot over %s models" % ", ".join(args.models), fontsize=10)
         plt.xlabel("Fraction of Horizon", fontsize=10)
         plt.ylabel("Fraction of gradient norm average", fontsize=10)
+
         plt.savefig("%s/gradnorms_%s_areas.pdf" % (args.plots_dir, '_'.join(args.models)), dpi=300, bbox_inches="tight")
         
         exit()
@@ -1339,6 +1412,7 @@ if __name__ == "__main__":
         models_name = '_'.join(args.name)
     else:
         models_name = '_'.join(sorted(args.models))
+
     plt.savefig("plots_/%s_%s_areas.pdf" % (gradnorms_str, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
 
     fig, ax = plt.subplots()
@@ -1400,6 +1474,7 @@ if __name__ == "__main__":
         models_name = '_'.join(args.name)
     else:
         models_name = '_'.join(sorted(args.models))
+
     plt.savefig("plots_/%s_%s_areas.pdf" % (gradnorms_str, "all_models" if args.models is None else models_name), dpi=300, bbox_inches="tight")
 
 if "SpaceTime" in args.models:
