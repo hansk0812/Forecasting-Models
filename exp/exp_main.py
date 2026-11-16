@@ -1201,6 +1201,29 @@ class Exp_Main(Exp_Basic):
             fig, (ax,ax2) = plt.subplots(nrows=2, sharex=True)
 
             extent = [x[0]-(x[1]-x[0])/2., x[-1]+(x[1]-x[0])/2.,0,1]
+             
+            last_timesteps_heuristic = 5
+            
+            if y.argmax() >= len(y) - last_timesteps_heuristic:
+                x_bak, y_bak = x.copy(), y.copy()
+                x, y = x[:-last_timesteps_heuristic], y[:-last_timesteps_heuristic]
+
+            ax.imshow(y[np.newaxis,:], cmap="inferno", aspect="auto", extent=extent)
+            ax.set_yticks([])
+            ax.set_xlim(extent[0], extent[1])
+ 
+            x, y = x_bak, y_bak
+
+            np.save(os.path.join("error_heatmap_std", 
+                        "%s_%s_%d_%s" % (
+                        self.args.data, self.args.model, self.args.pred_len, heatmap_idx)), y)
+            ax2.plot(x,y)
+ 
+            plt.tight_layout()
+            plt.savefig("%s_%s_heatmap_%d_%d_M.pdf" % (
+                            self.args.data, self.args.model, self.args.seq_len, self.args.pred_len), 
+                            dpi=300, bbox_inches="tight")
+
             ax.imshow(y[np.newaxis,:], cmap="inferno", aspect="auto", extent=extent)
             ax.set_yticks([])
             ax.set_xlim(extent[0], extent[1])
